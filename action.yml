@@ -8,9 +8,9 @@ inputs:
     required: false
     default: 'true'
   max_tokens:
-    description: 'Maximum tokens for AI processing'
+    description: 'Maximum tokens for AI processing (-1 for unlimited)'
     required: false
-    default: '10000'
+    default: '-1'
   claude_code_oauth_token:
     description: 'Claude Code OAuth token for AI-powered operations'
     required: false

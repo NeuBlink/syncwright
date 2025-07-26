@@ -1,0 +1,158 @@
+# Syncwright - Go Project .gitignore
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+syncwright
+syncwright.exe
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+vendor/
+
+# Go workspace file
+go.work
+
+# Build output
+bin/
+dist/
+build/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# nyc test coverage
+.nyc_output
+
+# node_modules (if any JavaScript tools are used)
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Syncwright specific files
+.syncwright-backup-*/
+syncwright-output/
+*.syncwright.json
+conflicts.json
+payload.json
+resolutions.json
+validation.json
+
+# AI and ML model files
+*.model
+*.weights
+*.checkpoint
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+temp/
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Configuration files that might contain secrets
+config/local.yml
+config/development.yml
+config/production.yml
+secrets.yml
+.secrets
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache
+.cache/
+*.cache
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Kubernetes
+*.kubeconfig
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Cloud credentials
+.aws/
+.azure/
+.gcp/
+service-account*.json
+
+# SSH keys
+id_rsa
+id_dsa
+*.pem
+*.key
+*.pub
+
+# Certificates
+*.crt
+*.cer
+*.p12
+*.jks
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Generated documentation
+docs/build/
+site/
+
+# Release artifacts
+release/
+releases/
