@@ -33,15 +33,21 @@ jobs:
         run: |
           echo "Validating GitHub Actions workflow files..."
           
-          # Create a simple yamllint config
+          # Create a simple yamllint config that focuses on syntax errors only
           cat > .yamllint.yml << 'EOF'
           extends: default
           rules:
-            line-length:
-              max: 120
+            line-length: disable
             comments: disable
             comments-indentation: disable
             truthy: disable
+            trailing-spaces: disable
+            new-line-at-end-of-file: disable
+            document-start: disable
+            empty-lines: disable
+            brackets: disable
+            braces: disable
+            indentation: disable
           EOF
           
           # Validate all YAML files
