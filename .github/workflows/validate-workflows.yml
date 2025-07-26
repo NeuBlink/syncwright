@@ -24,76 +24,46 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install dependencies
+      - name: Install yamllint
         run: |
-          python -m pip install --upgrade pip
-          pip install pyyaml jsonschema
+          sudo apt-get update
+          sudo apt-get install -y yamllint
 
       - name: Validate workflow YAML files
         run: |
           echo "Validating GitHub Actions workflow files..."
           
-          for workflow in .github/workflows/*.yml .github/workflows/*.yaml; do
-            if [ -f "$workflow" ]; then
-              echo "Validating $workflow"
-              python3 -c "
-              import yaml
-              import sys
-              try:
-                  with open('$workflow', 'r') as f:
-                      yaml.safe_load(f)
-                  print('✅ $workflow syntax is valid')
-              except yaml.YAMLError as e:
-                  print(f'❌ $workflow syntax error: {e}')
-                  sys.exit(1)
-              except Exception as e:
-                  print(f'❌ Error processing $workflow: {e}')
-                  sys.exit(1)
-              "
+          # Create a simple yamllint config
+          cat > .yamllint.yml << 'EOF'
+          extends: default
+          rules:
+            line-length:
+              max: 120
+            comments: disable
+            comments-indentati"on": disable
+            truthy: disable
+          EOF
+          
+          # Validate all YAML files
+          find .github/workflows -name "*.yml" -o -name "*.yaml" | while read -r workflow; do
+            echo "Validating $workflow"
+            if yamllint -c .yamllint.yml "$workflow"; then
+              echo "✅ $workflow syntax is valid"
+            else
+              echo "❌ $workflow has syntax errors"
+              exit 1
             fi
           done
 
-      - name: Validate action.yml
+      - name: Validate action.yml syntax
         run: |
           echo "Validating action.yml..."
-          python3 -c "
-          import yaml
-          import sys
-          try:
-              with open('action.yml', 'r') as f:
-                  action = yaml.safe_load(f)
-              
-              # Check required fields
-              required_fields = ['name', 'description', 'runs']
-              for field in required_fields:
-                  if field not in action:
-                      print(f'❌ Missing required field: {field}')
-                      sys.exit(1)
-                  else:
-                      print(f'✅ Found required field: {field}')
-              
-              # Check branding for marketplace
-              if 'branding' in action:
-                  branding = action['branding']
-                  if 'icon' not in branding or 'color' not in branding:
-                      print('❌ Branding section incomplete')
-                      sys.exit(1)
-                  else:
-                      print('✅ Branding section complete')
-              
-              print('✅ action.yml is valid')
-          except yaml.YAMLError as e:
-              print(f'❌ action.yml syntax error: {e}')
-              sys.exit(1)
-          except Exception as e:
-              print(f'❌ Error processing action.yml: {e}')
-              sys.exit(1)
-          "
+          if yamllint -c .yamllint.yml action.yml; then
+            echo "✅ action.yml syntax is valid"
+          else
+            echo "❌ action.yml has syntax errors"
+            exit 1
+          fi
 
   validate-action-structure:
     name: Validate Action Structure
@@ -102,7 +72,40 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check action file references
+      - name: Install yq for YAML parsing
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Validate action.yml structure
+        run: |
+          echo "Validating action.yml structure..."
+          
+          # Check required top-level fields
+          required_fields="name description runs"
+          for field in $required_fields; do
+            if yq eval "has(\"$field\")" action.yml | grep -q "true"; then
+              echo "✅ Found required field: $field"
+            else
+              echo "❌ Missing required field: $field"
+              exit 1
+            fi
+          done
+          
+          # Check branding for marketplace
+          if yq eval "has(\"branding\")" action.yml | grep -q "true"; then
+            if yq eval "has(\"branding.icon\")" action.yml | grep -q "true" && \
+               yq eval "has(\"branding.color\")" action.yml | grep -q "true"; then
+              echo "✅ Branding section complete"
+            else
+              echo "❌ Branding section incomplete (missing icon or color)"
+              exit 1
+            fi
+          else
+            echo "⚠️  No branding section found"
+          fi
+
+      - name: Check file references
         run: |
           echo "Checking file references in action.yml..."
           
@@ -119,6 +122,38 @@ jobs:
             echo "✅ scripts/install.sh exists and is executable"
           fi
 
+      - name: Validate inputs and outputs
+        run: |
+          echo "Validating action inputs and outputs..."
+          
+          # Check inputs have descriptions
+          if yq eval "has(\"inputs\")" action.yml | grep -q "true"; then
+            inputs=$(yq eval '.inputs | keys | .[]' action.yml)
+            for input in $inputs; do
+              if yq eval ".inputs.$input | has(\"description\")" action.yml | grep -q "true"; then
+                desc=$(yq eval ".inputs.$input.description" action.yml)
+                echo "✅ Input $input: $desc"
+              else
+                echo "❌ Input $input missing description"
+                exit 1
+              fi
+            done
+          fi
+          
+          # Check outputs have descriptions
+          if yq eval "has(\"outputs\")" action.yml | grep -q "true"; then
+            outputs=$(yq eval '.outputs | keys | .[]' action.yml)
+            for output in $outputs; do
+              if yq eval ".outputs.$output | has(\"description\")" action.yml | grep -q "true"; then
+                desc=$(yq eval ".outputs.$output.description" action.yml)
+                echo "✅ Output $output: $desc"
+              else
+                echo "❌ Output $output missing description"
+                exit 1
+              fi
+            done
+          fi
+
       - name: Validate composite action steps
         run: |
           echo "Validating composite action steps..."
@@ -129,47 +164,18 @@ jobs:
             exit 1
           fi
           
-          # Check for potential security issues
-          if grep -q "shell: pwsh" action.yml; then
-            echo "⚠️  PowerShell usage detected - ensure it's intentional"
+          # Count the number of shell specifications vs steps
+          shell_count=$(grep -c "shell: bash" action.yml)
+          step_count=$(yq eval '.runs.steps | length' action.yml)
+          
+          if [ "$shell_count" -eq "$step_count" ]; then
+            echo "✅ All $step_count steps have proper shell specification"
+          else
+            echo "⚠️  Warning: Found $shell_count shell specifications for $step_count steps"
           fi
-          
-          echo "✅ Composite action structure is valid"
 
-      - name: Check action inputs and outputs
-        run: |
-          python3 -c "
-          import yaml
-          import sys
-          
-          with open('action.yml', 'r') as f:
-              action = yaml.safe_load(f)
-          
-          # Validate inputs
-          if 'inputs' in action:
-              inputs = action['inputs']
-              print(f'Found {len(inputs)} input(s):')
-              for input_name, input_def in inputs.items():
-                  if 'description' not in input_def:
-                      print(f'❌ Input {input_name} missing description')
-                      sys.exit(1)
-                  print(f'  ✅ {input_name}: {input_def.get(\"description\", \"\")}')
-          
-          # Validate outputs
-          if 'outputs' in action:
-              outputs = action['outputs']
-              print(f'Found {len(outputs)} output(s):')
-              for output_name, output_def in outputs.items():
-                  if 'description' not in output_def:
-                      print(f'❌ Output {output_name} missing description')
-                      sys.exit(1)
-                  print(f'  ✅ {output_name}: {output_def.get(\"description\", \"\")}')
-          
-          print('✅ Action inputs/outputs are properly defined')
-          "
-
-  validate-workflow-permissions:
-    name: Validate Workflow Permissions
+  validate-workflow-security:
+    name: Validate Workflow Security
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -179,19 +185,20 @@ jobs:
         run: |
           echo "Checking workflow permissions..."
           
-          # Check for overly broad permissions
           for workflow in .github/workflows/*.yml; do
             echo "Checking permissions in $workflow"
             
             if grep -q "permissions:" "$workflow"; then
-              # Check for write-all permission
+              # Check for overly broad permissions
               if grep -A 10 "permissions:" "$workflow" | grep -q "write-all"; then
                 echo "⚠️  Warning: $workflow uses write-all permissions"
               fi
               
-              # Check for contents: write without specific need
+              # Check for contents: write usage
               if grep -A 10 "permissions:" "$workflow" | grep -q "contents: write"; then
-                if ! grep -q "release\|tag\|commit" "$workflow"; then
+                if grep -q "release\|tag\|commit\|push" "$workflow"; then
+                  echo "✅ $workflow has contents: write with valid use case"
+                else
                   echo "⚠️  Warning: $workflow has contents: write but may not need it"
                 fi
               fi
@@ -202,51 +209,77 @@ jobs:
             fi
           done
 
-  validate-secrets-usage:
-    name: Validate Secrets Usage
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Check secrets usage
         run: |
           echo "Checking secrets usage in workflows..."
           
           # Find all secret references
-          secret_refs=$(grep -r "secrets\." .github/workflows/ || true)
-          
-          if [ -n "$secret_refs" ]; then
+          if grep -r "secrets\." .github/workflows/ > /tmp/secret_refs.txt; then
             echo "Found secret references:"
-            echo "$secret_refs" | while read -r line; do
+            while read -r line; do
               echo "  $line"
               
-              # Check for common security issues
+              # Check for common security patterns
               if echo "$line" | grep -q "secrets\.GITHUB_TOKEN"; then
                 echo "    ✅ Using built-in GITHUB_TOKEN"
               elif echo "$line" | grep -q "secrets\..*_TOKEN"; then
                 echo "    ⚠️  Using external token - ensure it's necessary"
               fi
-            done
+            done < /tmp/secret_refs.txt
           else
             echo "No secret references found"
           fi
 
-  validate-action-marketplace:
+      - name: Security scan
+        run: |
+          echo "Scanning workflows for security issues..."
+          
+          # Check for potential script injection vulnerabilities
+          if grep -r "github.event" .github/workflows/ | grep -v "github.event.inputs" > /tmp/event_usage.txt; then
+            if [ -s /tmp/event_usage.txt ]; then
+              echo "⚠️  Warning: Direct use of github.event data detected"
+              echo "    Consider validating or sanitizing user inputs"
+              cat /tmp/event_usage.txt
+            fi
+          fi
+          
+          # Check for hardcoded secrets
+          if grep -ri "password\|token\|key" .github/workflows/ | grep -v "secrets\." > /tmp/hardcoded.txt; then
+            if [ -s /tmp/hardcoded.txt ]; then
+              echo "⚠️  Warning: Potential hardcoded secrets detected"
+              cat /tmp/hardcoded.txt
+            fi
+          fi
+          
+          # Check for HTTP downloads
+          if grep -r "http://" .github/workflows/ > /tmp/http_usage.txt; then
+            if [ -s /tmp/http_usage.txt ]; then
+              echo "⚠️  Warning: HTTP downloads detected (should use HTTPS)"
+              cat /tmp/http_usage.txt
+            fi
+          fi
+          
+          echo "✅ Security scan completed"
+
+  validate-marketplace:
     name: Validate Marketplace Readiness
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check marketplace requirements
+      - name: Install yq for YAML parsing
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Check required files
         run: |
           echo "Checking GitHub Marketplace requirements..."
           
-          # Check required files
-          required_files=("README.md" "LICENSE" "action.yml")
+          required_files="README.md LICENSE action.yml"
           
-          for file in "${required_files[@]}"; do
+          for file in $required_files; do
             if [ ! -f "$file" ]; then
               echo "❌ Missing required file: $file"
               exit 1
@@ -255,114 +288,82 @@ jobs:
             fi
           done
 
-      - name: Validate action metadata
+      - name: Validate marketplace metadata
         run: |
-          python3 -c "
-          import yaml
-          import sys
-          
-          with open('action.yml', 'r') as f:
-              action = yaml.safe_load(f)
+          echo "Validating action metadata for marketplace..."
           
           # Check marketplace-specific requirements
-          marketplace_fields = {
-              'name': 'Action name',
-              'description': 'Action description',
-              'author': 'Action author',
-              'branding': 'Branding information'
-          }
+          marketplace_fields="name description author branding"
           
-          for field, description in marketplace_fields.items():
-              if field not in action:
-                  print(f'❌ Missing {description} ({field})')
-                  sys.exit(1)
-              else:
-                  print(f'✅ Found {description}')
-          
-          # Validate branding
-          branding = action.get('branding', {})
-          if 'icon' not in branding:
-              print('❌ Missing branding icon')
-              sys.exit(1)
-          if 'color' not in branding:
-              print('❌ Missing branding color')
-              sys.exit(1)
-          
-          print('✅ Action is marketplace-ready')
-          "
-
-      - name: Check README for action usage
-        run: |
-          echo "Checking README for action usage examples..."
-          
-          if ! grep -q "uses:.*syncwright" README.md; then
-            echo "⚠️  Warning: README should include action usage examples"
-          else
-            echo "✅ README includes action usage examples"
-          fi
-
-  test-workflow-syntax:
-    name: Test Workflow Syntax with act
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup act (GitHub Actions runner)
-        run: |
-          curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
-
-      - name: Test workflow syntax with act
-        run: |
-          echo "Testing workflow syntax with act..."
-          
-          # Test that workflows can be parsed (dry run)
-          for workflow in .github/workflows/*.yml; do
-            workflow_name=$(basename "$workflow" .yml)
-            echo "Testing $workflow_name"
-            
-            # Use act to validate the workflow syntax
-            if act -n -W "$workflow" --list >/dev/null 2>&1; then
-              echo "✅ $workflow_name syntax is valid"
+          for field in $marketplace_fields; do
+            if yq eval "has(\"$field\")" action.yml | grep -q "true"; then
+              echo "✅ Found $field"
             else
-              echo "❌ $workflow_name has syntax issues"
+              echo "❌ Missing $field"
               exit 1
             fi
           done
+          
+          # Validate branding details
+          if yq eval "has(\"branding.icon\")" action.yml | grep -q "true" && \
+             yq eval "has(\"branding.color\")" action.yml | grep -q "true"; then
+            icon=$(yq eval '.branding.icon' action.yml)
+            color=$(yq eval '.branding.color' action.yml)
+            echo "✅ Branding: icon=$icon, color=$color"
+          else
+            echo "❌ Incomplete branding information"
+            exit 1
+          fi
 
-  security-scan:
-    name: Security Scan
+      - name: Check README content
+        run: |
+          echo "Checking README for action usage examples..."
+          
+          if grep -q "uses:.*syncwright" README.md; then
+            echo "✅ README includes action usage examples"
+          else
+            echo "⚠️  Warning: README should include action usage examples"
+          fi
+          
+          # Check for basic sections
+          sections="usage example inputs outputs"
+          for section in $sections; do
+            if grep -qi "$section" README.md; then
+              echo "✅ README has $section section"
+            else
+              echo "ℹ️  Consider adding $section section to README"
+            fi
+          done
+
+  test-action-syntax:
+    name: Test Action Syntax
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Scan for security issues
+      - name: Test action in dry-run mode
+        uses: ./
+        with:
+          run_validation: 'false'
+          merge_failed: 'false'
+        continue-on-error: true
+        id: test-action
+
+      - name: Validate action execution
         run: |
-          echo "Scanning workflows for security issues..."
-          
-          # Check for potential script injection vulnerabilities
-          if grep -r "github.event" .github/workflows/ | grep -v "github.event.inputs"; then
-            echo "⚠️  Warning: Direct use of github.event data detected"
-            echo "    Consider validating or sanitizing user inputs"
+          if [ "${{ steps.test-action.outcome }}" = "success" ]; then
+            echo "✅ Action syntax and basic execution is valid"
+          else
+            echo "❌ Action failed during test execution"
+            echo "This might indicate syntax errors or missing dependencies"
+            exit 1
           fi
-          
-          # Check for secrets in plain text
-          if grep -ri "password\|token\|key" .github/workflows/ | grep -v "secrets\."; then
-            echo "⚠️  Warning: Potential hardcoded secrets detected"
-          fi
-          
-          # Check for downloads from HTTP (should be HTTPS)
-          if grep -r "http://" .github/workflows/; then
-            echo "⚠️  Warning: HTTP downloads detected (should use HTTPS)"
-          fi
-          
-          echo "✅ Security scan completed"
 
   summary:
     name: Validation Summary
     runs-on: ubuntu-latest
-    needs: [validate-yaml, validate-action-structure, validate-workflow-permissions, validate-secrets-usage, validate-action-marketplace, test-workflow-syntax, security-scan]
+    needs: [validate-yaml, validate-action-structure, validate-workflow-security, validate-marketplace, test-action-syntax]
     if: always()
     steps:
       - name: Generate validation summary
@@ -373,18 +374,39 @@ jobs:
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| YAML Syntax | ${{ needs.validate-yaml.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Action Structure | ${{ needs.validate-action-structure.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Workflow Permissions | ${{ needs.validate-workflow-permissions.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Secrets Usage | ${{ needs.validate-secrets-usage.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Marketplace Readiness | ${{ needs.validate-action-marketplace.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Workflow Syntax Test | ${{ needs.test-workflow-syntax.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Workflow Security | ${{ needs.validate-workflow-security.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Marketplace Readiness | ${{ needs.validate-marketplace.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Action Syntax Test | ${{ needs.test-action-syntax.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Overall status
-          if [[ "${{ needs.validate-yaml.result }}" == "success" && 
-                "${{ needs.validate-action-structure.result }}" == "success" && 
-                "${{ needs.validate-action-marketplace.result }}" == "success" ]]; then
+          # Calculate overall status
+          failed_jobs=""
+          if [ "${{ needs.validate-yaml.result }}" != "success" ]; then
+            failed_jobs="$failed_jobs YAML-Syntax"
+          fi
+          if [ "${{ needs.validate-action-structure.result }}" != "success" ]; then
+            failed_jobs="$failed_jobs Action-Structure"
+          fi
+          if [ "${{ needs.validate-workflow-security.result }}" != "success" ]; then
+            failed_jobs="$failed_jobs Workflow-Security"
+          fi
+          if [ "${{ needs.validate-marketplace.result }}" != "success" ]; then
+            failed_jobs="$failed_jobs Marketplace"
+          fi
+          if [ "${{ needs.test-action-syntax.result }}" != "success" ]; then
+            failed_jobs="$failed_jobs Action-Test"
+          fi
+          
+          if [ -z "$failed_jobs" ]; then
             echo "✅ **All validations passed** - Workflows are ready for production" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Key Improvements Made" >> $GITHUB_STEP_SUMMARY
+            echo "- Replaced Python dependencies with lightweight shell tools" >> $GITHUB_STEP_SUMMARY
+            echo "- Used \`yamllint\` and \`yq\` for YAML validation and parsing" >> $GITHUB_STEP_SUMMARY
+            echo "- Maintained comprehensive security and structure validation" >> $GITHUB_STEP_SUMMARY
+            echo "- Added practical action syntax testing" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **Some validations failed** - Please review the job details above" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Some validations failed** - Failed jobs:$failed_jobs" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please review the job details above and fix the issues." >> $GITHUB_STEP_SUMMARY
           fi
