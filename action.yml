@@ -1,5 +1,5 @@
 name: 'Syncwright'
-description: 'AI-powered Git merge conflict resolution tool that automatically detects, analyzes, and resolves merge conflicts using advanced language models'
+description: 'AI-powered Git merge conflict resolution tool that automatically detects, analyzes, and resolves merge conflicts using advanced language models for seamless CI/CD integration'
 author: 'Syncwright Team'
 
 # GitHub Marketplace metadata
@@ -7,42 +7,45 @@ branding:
   icon: 'git-merge'
   color: 'blue'
 
-# Action tags for marketplace discoverability
-# Note: These are added as comments since action.yml doesn't support tags field
-# Tags: git, merge-conflicts, ai, automation, cli, conflict-resolution, ci-cd, github-actions
+# Marketplace optimization:
+# - Name: Clear, descriptive action name
+# - Description: Comprehensive description highlighting AI capabilities and CI/CD integration
+# - Author: Consistent team branding
+# - Branding: Professional git-merge icon with blue color for trust and reliability
+# - Tags (conceptual): git, merge-conflicts, ai, automation, cli, conflict-resolution, ci-cd, github-actions, devops, continuous-integration
 
 inputs:
   run_validation:
-    description: 'Whether to run validation checks'
+    description: 'Enable comprehensive validation checks before and after conflict resolution'
     required: false
     default: 'true'
   max_tokens:
-    description: 'Maximum tokens for AI processing (-1 for unlimited)'
+    description: 'Maximum tokens for AI processing (-1 for unlimited, recommended for complex conflicts)'
     required: false
     default: '-1'
   claude_code_oauth_token:
-    description: 'Claude Code OAuth token for AI-powered operations'
+    description: 'Claude Code OAuth token for AI-powered conflict resolution (store as repository secret)'
     required: false
   merge_failed:
-    description: 'Whether the automatic merge failed'
+    description: 'Set to true when automatic Git merge fails to trigger AI-powered resolution'
     required: false
     default: 'false'
   pr_number:
-    description: 'Pull request number'
+    description: 'Pull request number for context-aware resolution and status reporting'
     required: false
   base_branch:
-    description: 'Base branch name'
+    description: 'Target branch name (e.g., main, develop) for merge operation context'
     required: false
   head_branch:
-    description: 'Head branch name'
+    description: 'Source branch name containing changes to be merged'
     required: false
 
 outputs:
   conflicts_resolved:
-    description: 'Whether conflicts were resolved'
+    description: 'Boolean indicating whether merge conflicts were successfully resolved by AI'
     value: ${{ steps.run-syncwright.outputs.conflicts_resolved }}
   files_modified:
-    description: 'Number of files modified'
+    description: 'Number of files that were modified during the conflict resolution process'
     value: ${{ steps.run-syncwright.outputs.files_modified }}
 
 runs:

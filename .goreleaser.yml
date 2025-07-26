@@ -263,7 +263,7 @@ winget:
         base:
           owner: microsoft
           name: winget-pkgs
-          branch: master
+          branch: main
 
 # Linux packages (DEB and RPM)
 nfpms:
