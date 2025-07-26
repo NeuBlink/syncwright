@@ -24,22 +24,20 @@ Add Syncwright to your workflow to automatically resolve merge conflicts in pull
 name: Auto-resolve conflicts
 on:
   pull_request:
-    types: [opened, synchronize]
 
 jobs:
-  resolve-conflicts:
+  resolve:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
-      - name: Resolve merge conflicts
-        uses: neublink/syncwright@v1
+      - uses: neublink/syncwright@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          run_validation: true
-          max_tokens: 10000
 ```
 
 ### As CLI Tool
@@ -108,7 +106,7 @@ go install github.com/neublink/syncwright/cmd/syncwright@latest
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code OAuth token for AI operations | Yes* | - |
-| `SYNCWRIGHT_MAX_TOKENS` | Maximum tokens for AI processing | No | 10000 |
+| `SYNCWRIGHT_MAX_TOKENS` | Maximum tokens for AI processing | No | unlimited |
 | `SYNCWRIGHT_DEBUG` | Enable debug logging | No | false |
 | `SYNCWRIGHT_VERSION` | Specific version to install | No | latest |
 
@@ -120,7 +118,7 @@ go install github.com/neublink/syncwright/cmd/syncwright@latest
 |-------|-------------|----------|---------|
 | `claude_code_oauth_token` | Claude Code OAuth token | No | - |
 | `run_validation` | Run validation checks | No | true |
-| `max_tokens` | Maximum tokens for AI processing | No | 10000 |
+| `max_tokens` | Maximum tokens for AI processing (-1 for unlimited) | No | unlimited |
 | `merge_failed` | Whether automatic merge failed | No | false |
 | `pr_number` | Pull request number | No | - |
 | `base_branch` | Base branch name | No | - |
@@ -191,7 +189,7 @@ jobs:
           base_branch: ${{ github.base_ref }}
           head_branch: ${{ github.head_ref }}
           run_validation: true
-          max_tokens: 15000
+          # max_tokens: -1  # unlimited by default
 ```
 
 ### CLI Workflow

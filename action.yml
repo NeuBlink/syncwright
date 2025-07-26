@@ -1,6 +1,15 @@
 name: 'Syncwright'
-description: 'AI-powered Git merge conflict resolution tool'
+description: 'AI-powered Git merge conflict resolution tool that automatically detects, analyzes, and resolves merge conflicts using advanced language models'
 author: 'Syncwright Team'
+
+# GitHub Marketplace metadata
+branding:
+  icon: 'git-merge'
+  color: 'blue'
+
+# Action tags for marketplace discoverability
+# Note: These are added as comments since action.yml doesn't support tags field
+# Tags: git, merge-conflicts, ai, automation, cli, conflict-resolution, ci-cd, github-actions
 
 inputs:
   run_validation:
@@ -212,7 +221,3 @@ runs:
             echo "❌ **Failed**: Conflict resolution unsuccessful"
           fi
         } >> $GITHUB_STEP_SUMMARY
-
-branding:
-  icon: 'git-merge'
-  color: 'blue'

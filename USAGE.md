@@ -106,7 +106,7 @@ set -e
 
 # Configuration
 CONFIDENCE_THRESHOLD=0.7
-MAX_TOKENS=15000
+# MAX_TOKENS=-1  # unlimited by default
 OUTPUT_DIR="./syncwright-output"
 
 # Create output directory
@@ -139,7 +139,7 @@ if ! syncwright ai-apply \
     --in "$OUTPUT_DIR/payload.json" \
     --out "$OUTPUT_DIR/resolutions.json" \
     --confidence-threshold "$CONFIDENCE_THRESHOLD" \
-    --max-tokens "$MAX_TOKENS" \
+    # --max-tokens -1  # unlimited by default \
     --verbose; then
     echo "❌ AI resolution failed"
     exit 1
@@ -178,21 +178,20 @@ fi
 name: Syncwright Integration
 on:
   pull_request:
-    types: [opened, synchronize]
 
 jobs:
-  resolve-conflicts:
+  resolve:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
-      - name: Resolve conflicts
-        uses: neublink/syncwright@v1
+      - uses: neublink/syncwright@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          run_validation: true
 ```
 
 ### Advanced Workflow
@@ -276,7 +275,7 @@ jobs:
           pr_number: ${{ github.event.number }}
           base_branch: ${{ github.base_ref }}
           head_branch: ${{ github.head_ref }}
-          max_tokens: 20000
+          # max_tokens: -1  # unlimited by default
           confidence_threshold: ${{ matrix.confidence }}
       
       - name: Post resolution summary
@@ -343,13 +342,13 @@ jobs:
         include:
           - language: go
             files: "**/*.go"
-            max_tokens: 8000
+            # max_tokens: -1  # unlimited by default
           - language: typescript
             files: "**/*.{ts,tsx,js,jsx}"
-            max_tokens: 12000
+            # max_tokens: -1  # unlimited by default
           - language: python
             files: "**/*.py"
-            max_tokens: 10000
+            # max_tokens: -1  # unlimited by default
     
     steps:
       - uses: actions/checkout@v4
@@ -360,7 +359,7 @@ jobs:
         uses: neublink/syncwright@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          max_tokens: ${{ matrix.max_tokens }}
+          # max_tokens: -1  # unlimited by default
           file_filter: ${{ matrix.files }}
           language_specific: true
 ```
@@ -602,6 +601,7 @@ jq '.' conflicts.json  # Validate JSON structure
 
 ```bash
 # Reduce token usage
+# Reduce token usage if needed (unlimited by default)
 syncwright ai-apply --max-tokens 5000
 
 # Add delays between requests

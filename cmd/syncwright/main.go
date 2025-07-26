@@ -51,6 +51,7 @@ through a pipeline of JSON-based operations that can be automated or AI-assisted
 		newFormatCmd(),
 		newValidateCmd(),
 		newCommitCmd(),
+		newResolveCmd(),
 	)
 
 	return cmd
@@ -359,6 +360,82 @@ func newCommitCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	return cmd
+}
+
+func newResolveCmd() *cobra.Command {
+	var (
+		maxTokens int
+		aiMode    bool
+		verbose   bool
+		dryRun    bool
+		confidence float64
+	)
+
+	cmd := &cobra.Command{
+		Use:   "resolve",
+		Short: "Automated conflict resolution pipeline",
+		Long: `Runs the complete conflict resolution pipeline: detect conflicts, 
+generate AI payload, apply resolutions, and validate results.
+
+This command combines all Syncwright operations into a single workflow
+suitable for CI/CD environments and automated conflict resolution.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if verbose {
+				fmt.Println("🔍 Starting automated conflict resolution...")
+			}
+
+			// Step 1: Detect conflicts
+			detectResult, err := commands.DetectConflicts("")
+			if err != nil {
+				return fmt.Errorf("conflict detection failed: %w", err)
+			}
+
+			if len(detectResult.Conflicts) == 0 {
+				if verbose {
+					fmt.Println("✅ No conflicts detected")
+				}
+				return nil
+			}
+
+			if verbose {
+				fmt.Printf("📋 Found %d conflicts\n", len(detectResult.Conflicts))
+			}
+
+			if !aiMode {
+				fmt.Printf("Found %d conflicts. Use --ai flag to resolve with AI assistance.\n", len(detectResult.Conflicts))
+				return nil
+			}
+
+			// For now, provide basic conflict information
+			if verbose {
+				fmt.Printf("🤖 AI resolution would process %d conflicts\n", len(detectResult.Conflicts))
+				if maxTokens == -1 {
+					fmt.Println("📊 Using unlimited tokens for AI processing")
+				} else {
+					fmt.Printf("📊 Using %d tokens for AI processing\n", maxTokens)
+				}
+			}
+
+			if dryRun {
+				fmt.Printf("Dry run: Would resolve %d conflicts with AI assistance\n", len(detectResult.Conflicts))
+				return nil
+			}
+
+			// TODO: Complete the pipeline with payload generation and AI application
+			fmt.Printf("Detected %d conflicts. Full AI resolution pipeline coming soon.\n", len(detectResult.Conflicts))
+			fmt.Println("For now, use the individual commands: detect -> payload -> ai-apply")
+
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&maxTokens, "max-tokens", -1, "Maximum tokens for AI processing (-1 for unlimited)")
+	cmd.Flags().BoolVar(&aiMode, "ai", false, "Enable AI-powered conflict resolution")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview changes without applying")
+	cmd.Flags().Float64Var(&confidence, "confidence", 0.7, "Minimum confidence threshold for applying resolutions")
 
 	return cmd
 }

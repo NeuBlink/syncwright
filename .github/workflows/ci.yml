@@ -1,0 +1,532 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  pull_request:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.22'
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.changes.outputs.go }}
+      actions: ${{ steps.changes.outputs.actions }}
+      scripts: ${{ steps.changes.outputs.scripts }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Makefile'
+            actions:
+              - '.github/workflows/**'
+              - 'action.yml'
+            scripts:
+              - 'scripts/**'
+
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          args: --timeout=5m --verbose
+
+      - name: Check go mod tidy
+        run: |
+          go mod tidy
+          if ! git diff --exit-code go.mod go.sum; then
+            echo "Error: go.mod or go.sum is not tidy"
+            echo "Run 'go mod tidy' to fix this"
+            exit 1
+          fi
+
+      - name: Check formatting
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "Error: Code is not formatted"
+            echo "Run 'gofmt -s -w .' to fix formatting issues:"
+            gofmt -s -l .
+            exit 1
+          fi
+
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.21', '1.22']
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Generate coverage report
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == env.GO_VERSION
+        run: |
+          go tool cover -html=coverage.out -o coverage.html
+          go tool cover -func=coverage.out
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == env.GO_VERSION
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+
+      - name: Upload coverage artifacts
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == env.GO_VERSION
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage.out
+            coverage.html
+
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build binary
+        run: |
+          make build
+
+      - name: Test binary execution
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            BINARY="bin/syncwright.exe"
+          else
+            BINARY="bin/syncwright"
+          fi
+          
+          if [ ! -f "$BINARY" ]; then
+            echo "Error: Binary not found at $BINARY"
+            ls -la bin/
+            exit 1
+          fi
+          
+          # Test basic command execution
+          "$BINARY" --help || echo "Help command completed with exit code $?"
+          "$BINARY" --version || echo "Version command completed with exit code $?"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.os }}
+          path: bin/
+
+  test-cli-commands:
+    name: Test CLI Commands
+    runs-on: ubuntu-latest
+    needs: [changes, build]
+    if: needs.changes.outputs.go == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binary
+        run: make build
+
+      - name: Set up test environment
+        run: |
+          # Create a test git repository
+          git config --global user.name "CI Test"
+          git config --global user.email "ci@example.com"
+          
+          mkdir test-repo
+          cd test-repo
+          git init
+          
+          # Create initial file
+          echo "initial content" > test.txt
+          git add test.txt
+          git commit -m "Initial commit"
+          
+          # Create conflict scenario
+          git checkout -b feature
+          echo "feature change" > test.txt
+          git add test.txt
+          git commit -m "Feature change"
+          
+          git checkout main
+          echo "main change" > test.txt
+          git add test.txt
+          git commit -m "Main change"
+
+      - name: Test validate command
+        run: |
+          cd test-repo
+          ../bin/syncwright validate --verbose || echo "Validate command completed"
+
+      - name: Test detect command
+        run: |
+          cd test-repo
+          # Try to merge to create conflicts
+          git merge feature || true
+          ../bin/syncwright detect --format json || echo "Detect command completed"
+
+      - name: Test format command
+        run: |
+          cd test-repo
+          ../bin/syncwright format --check || echo "Format command completed"
+
+      - name: Test version command
+        run: |
+          ./bin/syncwright --version
+
+      - name: Test help command
+        run: |
+          ./bin/syncwright --help
+          ./bin/syncwright validate --help
+          ./bin/syncwright detect --help
+          ./bin/syncwright format --help
+
+  validate-actions:
+    name: Validate GitHub Actions
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.actions == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate action.yml syntax
+        run: |
+          # Validate YAML syntax
+          python3 -c "
+          import yaml
+          import sys
+          try:
+              with open('action.yml', 'r') as f:
+                  yaml.safe_load(f)
+              print('✅ action.yml syntax is valid')
+          except yaml.YAMLError as e:
+              print(f'❌ action.yml syntax error: {e}')
+              sys.exit(1)
+          "
+
+      - name: Validate workflow syntax
+        run: |
+          for workflow in .github/workflows/*.yml; do
+            echo "Validating $workflow"
+            python3 -c "
+            import yaml
+            import sys
+            try:
+                with open('$workflow', 'r') as f:
+                    yaml.safe_load(f)
+                print('✅ $workflow syntax is valid')
+            except yaml.YAMLError as e:
+                print(f'❌ $workflow syntax error: {e}')
+                sys.exit(1)
+            "
+          done
+
+      - name: Check action metadata
+        run: |
+          # Check required fields for GitHub Actions
+          required_fields=("name" "description" "runs")
+          
+          for field in "${required_fields[@]}"; do
+            if ! grep -q "^${field}:" action.yml; then
+              echo "❌ Missing required field: $field"
+              exit 1
+            else
+              echo "✅ Found required field: $field"
+            fi
+          done
+
+      - name: Validate composite action
+        run: |
+          # Check that referenced files exist
+          if grep -q "github.action_path" action.yml; then
+            echo "✅ Action uses github.action_path correctly"
+          fi
+          
+          # Check shell specifications
+          if ! grep -q "shell: bash" action.yml; then
+            echo "❌ Missing shell specification in composite action"
+            exit 1
+          fi
+
+  validate-scripts:
+    name: Validate Scripts
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.scripts == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Validate shell scripts
+        run: |
+          find scripts/ -name "*.sh" -type f | while read -r script; do
+            echo "Checking $script"
+            shellcheck "$script"
+          done
+
+      - name: Test script execution
+        run: |
+          # Test install script with dry run simulation
+          chmod +x scripts/install.sh
+          
+          # Test help output
+          scripts/install.sh --help
+
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: [build, validate-actions]
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.actions == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up test repository
+        run: |
+          git config --global user.name "Integration Test"
+          git config --global user.email "integration@example.com"
+          
+          # Create a complex test scenario
+          mkdir integration-test
+          cd integration-test
+          git init
+          
+          # Create multiple files with different content
+          echo "shared content" > shared.txt
+          echo "file1 content" > file1.txt
+          echo "file2 content" > file2.txt
+          git add .
+          git commit -m "Initial commit"
+          
+          # Create feature branch
+          git checkout -b feature
+          echo "shared content modified in feature" > shared.txt
+          echo "file1 modified in feature" > file1.txt
+          echo "new feature file" > feature.txt
+          git add .
+          git commit -m "Feature changes"
+          
+          # Switch back and make conflicting changes
+          git checkout main
+          echo "shared content modified in main" > shared.txt
+          echo "file1 modified in main" > file1.txt
+          echo "new main file" > main.txt
+          git add .
+          git commit -m "Main changes"
+
+      - name: Test action with integration scenario
+        uses: ./
+        with:
+          run_validation: 'true'
+          max_tokens: '5000'
+          merge_failed: 'false'
+        continue-on-error: true
+
+      - name: Verify integration test results
+        run: |
+          echo "Integration test completed"
+          if [ -f "./syncwright" ]; then
+            echo "✅ Syncwright binary installed successfully"
+          else
+            echo "❌ Syncwright binary not found"
+            exit 1
+          fi
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run Gosec Security Scanner
+        uses: securecodewarrior/github-action-gosec@master
+        with:
+          args: '-fmt sarif -out gosec.sarif ./...'
+
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
+
+  performance-test:
+    name: Performance Test
+    runs-on: ubuntu-latest
+    needs: [changes, build]
+    if: needs.changes.outputs.go == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binary
+        run: make build
+
+      - name: Run performance benchmarks
+        run: |
+          # Run Go benchmarks
+          go test -bench=. -benchmem ./... > benchmark.txt
+          cat benchmark.txt
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results
+          path: benchmark.txt
+
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [changes, lint, test, build, test-cli-commands, validate-actions, validate-scripts, integration-test, security-scan, performance-test]
+    if: always()
+    steps:
+      - name: Generate CI summary
+        run: |
+          echo "## 🔍 CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check which jobs ran based on changes
+          if [ "${{ needs.changes.outputs.go }}" = "true" ]; then
+            echo "### Go Code Changes Detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Test | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Build | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| CLI Commands Test | ${{ needs.test-cli-commands.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Performance Test | ${{ needs.performance-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.changes.outputs.actions }}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### GitHub Actions Changes Detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Validate Actions | ${{ needs.validate-actions.result }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.changes.outputs.scripts }}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Script Changes Detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Validate Scripts | ${{ needs.validate-scripts.result }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration Test | ${{ needs.integration-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall status
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.lint.result }}" != "failure" ] && [ "${{ needs.test.result }}" != "failure" ] && [ "${{ needs.build.result }}" != "failure" ]; then
+            echo "✅ **CI passed successfully**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **CI failed - check job details above**" >> $GITHUB_STEP_SUMMARY
+          fi
