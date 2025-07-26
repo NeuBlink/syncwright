@@ -1,0 +1,148 @@
+# golangci-lint configuration for Syncwright
+# See https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+  modules-download-mode: readonly
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  uniq-by-line: true
+
+linters-settings:
+  # Gofmt settings
+  gofmt:
+    simplify: true
+
+  # Goimports settings
+  goimports:
+    local-prefixes: syncwright
+
+  # Golint settings
+  golint:
+    min-confidence: 0
+
+  # Govet settings
+  govet:
+    check-shadowing: true
+    enable-all: true
+
+  # Staticcheck settings
+  staticcheck:
+    go: "1.22"
+    checks: ["all"]
+
+  # Unused settings
+  unused:
+    go: "1.22"
+
+  # Errcheck settings
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  # Gosec settings
+  gosec:
+    severity: medium
+    confidence: medium
+
+  # Cyclop settings
+  cyclop:
+    max-complexity: 15
+    package-average: 10.0
+
+  # Funlen settings
+  funlen:
+    lines: 100
+    statements: 50
+
+  # Gocognit settings
+  gocognit:
+    min-complexity: 20
+
+  # Nestif settings
+  nestif:
+    min-complexity: 5
+
+  # Goconst settings
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+  # Misspell settings
+  misspell:
+    locale: US
+
+  # Lll settings
+  lll:
+    line-length: 120
+
+  # Godox settings
+  godox:
+    keywords:
+      - FIXME
+      - BUG
+
+linters:
+  # Enable specific linters
+  enable:
+    - errcheck      # Check for unchecked errors
+    - gosimple      # Simplify code
+    - govet         # Vet examines Go source code
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Static analysis
+    - typecheck     # Type checking
+    - unused        # Check for unused code
+    - gofmt         # Check formatting
+    - goimports     # Check imports
+    - misspell      # Check for misspellings
+    - goconst       # Check for repeated strings
+    - gosec         # Security analysis
+    - cyclop        # Cyclomatic complexity
+    - funlen        # Function length
+    - gocognit      # Cognitive complexity
+    - nestif        # Nested if statements
+    - lll           # Line length
+    - godox         # Check for TODO/FIXME comments
+
+  # Disable specific linters that might be too strict
+  disable:
+    - gochecknoinits  # Allow init functions for CLI tools
+    - gochecknoglobals # Allow globals for CLI configuration
+
+issues:
+  # Exclude certain patterns
+  exclude-rules:
+    # Exclude test files from certain checks
+    - path: _test\.go
+      linters:
+        - funlen
+        - gosec
+        - lll
+
+    # Exclude main.go from certain checks (CLI entry point)
+    - path: cmd/syncwright/main\.go
+      linters:
+        - funlen
+        - gocognit
+
+    # Exclude specific error messages
+    - text: "Line contains TODO/BUG/FIXME"
+      linters:
+        - godox
+
+  # Show only new issues
+  new: false
+
+  # Maximum issues count per one linter
+  max-issues-per-linter: 0
+
+  # Maximum count of issues with the same text
+  max-same-issues: 0
+
+  # Fix issues automatically when possible
+  fix: false
