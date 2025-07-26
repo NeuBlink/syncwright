@@ -16,31 +16,31 @@ import (
 
 // AIApplyOptions contains options for the ai-apply command
 type AIApplyOptions struct {
-	PayloadFile     string
-	RepoPath        string
-	APIKey          string
-	APIEndpoint     string
-	OutputFile      string
-	DryRun          bool
-	Verbose         bool
-	AutoApply       bool
-	MinConfidence   float64
-	BackupFiles     bool
-	MaxRetries      int
-	TimeoutSeconds  int
+	PayloadFile    string
+	RepoPath       string
+	APIKey         string
+	APIEndpoint    string
+	OutputFile     string
+	DryRun         bool
+	Verbose        bool
+	AutoApply      bool
+	MinConfidence  float64
+	BackupFiles    bool
+	MaxRetries     int
+	TimeoutSeconds int
 }
 
 // AIApplyResult represents the result of the AI application
 type AIApplyResult struct {
-	Success           bool                           `json:"success"`
-	ProcessedFiles    int                            `json:"processed_files"`
+	Success            bool                          `json:"success"`
+	ProcessedFiles     int                           `json:"processed_files"`
 	AppliedResolutions int                           `json:"applied_resolutions"`
 	SkippedResolutions int                           `json:"skipped_resolutions"`
-	FailedResolutions int                            `json:"failed_resolutions"`
-	Resolutions       []gitutils.ConflictResolution  `json:"resolutions"`
-	ApplicationResult *gitutils.ResolutionResult     `json:"application_result,omitempty"`
-	ErrorMessage      string                         `json:"error_message,omitempty"`
-	AIResponse        *AIResolveResponse             `json:"ai_response,omitempty"`
+	FailedResolutions  int                           `json:"failed_resolutions"`
+	Resolutions        []gitutils.ConflictResolution `json:"resolutions"`
+	ApplicationResult  *gitutils.ResolutionResult    `json:"application_result,omitempty"`
+	ErrorMessage       string                        `json:"error_message,omitempty"`
+	AIResponse         *AIResolveResponse            `json:"ai_response,omitempty"`
 }
 
 // AIResolveRequest represents the request sent to Claude Code API
@@ -52,23 +52,23 @@ type AIResolveRequest struct {
 
 // AIPreferences contains preferences for AI resolution
 type AIPreferences struct {
-	MinConfidence     float64 `json:"min_confidence"`
-	PreferExplicit    bool    `json:"prefer_explicit"`
-	IncludeReasoning  bool    `json:"include_reasoning"`
-	PreserveBoth      bool    `json:"preserve_both_when_uncertain"`
-	MaxResolutions    int     `json:"max_resolutions"`
+	MinConfidence    float64 `json:"min_confidence"`
+	PreferExplicit   bool    `json:"prefer_explicit"`
+	IncludeReasoning bool    `json:"include_reasoning"`
+	PreserveBoth     bool    `json:"preserve_both_when_uncertain"`
+	MaxResolutions   int     `json:"max_resolutions"`
 }
 
 // AIResolveResponse represents the response from Claude Code API
 type AIResolveResponse struct {
-	Success         bool                          `json:"success"`
-	Resolutions     []gitutils.ConflictResolution `json:"resolutions"`
-	OverallConfidence float64                     `json:"overall_confidence"`
-	Reasoning       string                        `json:"reasoning,omitempty"`
-	Warnings        []string                      `json:"warnings,omitempty"`
-	ErrorMessage    string                        `json:"error_message,omitempty"`
-	RequestID       string                        `json:"request_id,omitempty"`
-	ProcessingTime  float64                       `json:"processing_time,omitempty"`
+	Success           bool                          `json:"success"`
+	Resolutions       []gitutils.ConflictResolution `json:"resolutions"`
+	OverallConfidence float64                       `json:"overall_confidence"`
+	Reasoning         string                        `json:"reasoning,omitempty"`
+	Warnings          []string                      `json:"warnings,omitempty"`
+	ErrorMessage      string                        `json:"error_message,omitempty"`
+	RequestID         string                        `json:"request_id,omitempty"`
+	ProcessingTime    float64                       `json:"processing_time,omitempty"`
 }
 
 // AIApplyCommand implements the ai-apply subcommand
@@ -97,11 +97,11 @@ func NewAIApplyCommand(options AIApplyOptions) *AIApplyCommand {
 			options.RepoPath = wd
 		}
 	}
-	
+
 	client := &http.Client{
 		Timeout: time.Duration(options.TimeoutSeconds) * time.Second,
 	}
-	
+
 	return &AIApplyCommand{
 		options: options,
 		client:  client,
@@ -111,18 +111,18 @@ func NewAIApplyCommand(options AIApplyOptions) *AIApplyCommand {
 // Execute runs the ai-apply command
 func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 	result := &AIApplyResult{}
-	
+
 	// Load payload
 	conflictPayload, err := a.loadPayload()
 	if err != nil {
 		result.ErrorMessage = fmt.Sprintf("Failed to load payload: %v", err)
 		return result, err
 	}
-	
+
 	if a.options.Verbose {
 		fmt.Printf("Loaded payload with %d conflicted files\n", len(conflictPayload.Files))
 	}
-	
+
 	// Validate API key
 	if a.options.APIKey == "" {
 		a.options.APIKey = os.Getenv("CLAUDE_API_KEY")
@@ -131,7 +131,7 @@ func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 			return result, fmt.Errorf("missing API key")
 		}
 	}
-	
+
 	// Create backup if requested
 	if a.options.BackupFiles {
 		if err := a.createBackups(conflictPayload); err != nil {
@@ -139,36 +139,36 @@ func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 			return result, err
 		}
 	}
-	
+
 	// Send to AI for resolution
 	aiResponse, err := a.sendToAI(conflictPayload)
 	if err != nil {
 		result.ErrorMessage = fmt.Sprintf("Failed to get AI resolution: %v", err)
 		return result, err
 	}
-	
+
 	result.AIResponse = aiResponse
-	
+
 	if !aiResponse.Success {
 		result.ErrorMessage = fmt.Sprintf("AI resolution failed: %s", aiResponse.ErrorMessage)
 		return result, fmt.Errorf("AI resolution failed")
 	}
-	
+
 	if a.options.Verbose {
-		fmt.Printf("AI generated %d resolutions with overall confidence %.2f\n", 
+		fmt.Printf("AI generated %d resolutions with overall confidence %.2f\n",
 			len(aiResponse.Resolutions), aiResponse.OverallConfidence)
 	}
-	
+
 	// Filter resolutions by confidence
 	filteredResolutions := a.filterResolutionsByConfidence(aiResponse.Resolutions)
 	result.Resolutions = filteredResolutions
 	result.SkippedResolutions = len(aiResponse.Resolutions) - len(filteredResolutions)
-	
+
 	if a.options.Verbose && result.SkippedResolutions > 0 {
-		fmt.Printf("Skipped %d resolutions due to low confidence (< %.2f)\n", 
+		fmt.Printf("Skipped %d resolutions due to low confidence (< %.2f)\n",
 			result.SkippedResolutions, a.options.MinConfidence)
 	}
-	
+
 	// Apply resolutions if not dry run
 	if !a.options.DryRun && len(filteredResolutions) > 0 {
 		if a.options.AutoApply {
@@ -177,14 +177,14 @@ func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 				result.ErrorMessage = fmt.Sprintf("Failed to apply resolutions: %v", err)
 				return result, err
 			}
-			
+
 			result.ApplicationResult = applicationResult
 			result.AppliedResolutions = applicationResult.AppliedCount
 			result.FailedResolutions = applicationResult.FailedCount
 			result.Success = applicationResult.Success
-			
+
 			if a.options.Verbose {
-				fmt.Printf("Applied %d resolutions, %d failed\n", 
+				fmt.Printf("Applied %d resolutions, %d failed\n",
 					result.AppliedResolutions, result.FailedResolutions)
 			}
 		} else {
@@ -195,7 +195,7 @@ func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 					result.ErrorMessage = fmt.Sprintf("Failed to apply resolutions: %v", err)
 					return result, err
 				}
-				
+
 				result.ApplicationResult = applicationResult
 				result.AppliedResolutions = applicationResult.AppliedCount
 				result.FailedResolutions = applicationResult.FailedCount
@@ -211,15 +211,15 @@ func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 			fmt.Printf("Dry run: Would apply %d resolutions\n", len(filteredResolutions))
 		}
 	}
-	
+
 	result.ProcessedFiles = len(conflictPayload.Files)
-	
+
 	// Output results
 	if err := a.outputResults(result); err != nil {
 		result.ErrorMessage = fmt.Sprintf("Failed to output results: %v", err)
 		return result, err
 	}
-	
+
 	return result, nil
 }
 
@@ -227,7 +227,7 @@ func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 func (a *AIApplyCommand) loadPayload() (*payload.ConflictPayload, error) {
 	var data []byte
 	var err error
-	
+
 	if a.options.PayloadFile == "" || a.options.PayloadFile == "-" {
 		// Read from stdin
 		data, err = io.ReadAll(os.Stdin)
@@ -241,11 +241,11 @@ func (a *AIApplyCommand) loadPayload() (*payload.ConflictPayload, error) {
 			return nil, fmt.Errorf("failed to read file %s: %w", a.options.PayloadFile, err)
 		}
 	}
-	
+
 	if len(data) == 0 {
 		return nil, fmt.Errorf("empty payload data")
 	}
-	
+
 	return payload.FromJSON(data)
 }
 
@@ -262,12 +262,12 @@ func (a *AIApplyCommand) sendToAI(conflictPayload *payload.ConflictPayload) (*AI
 		},
 		Context: "Please resolve these merge conflicts intelligently, preserving the intent of both sides when possible.",
 	}
-	
+
 	requestData, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
-	
+
 	var lastErr error
 	for attempt := 0; attempt < a.options.MaxRetries; attempt++ {
 		if attempt > 0 {
@@ -276,82 +276,82 @@ func (a *AIApplyCommand) sendToAI(conflictPayload *payload.ConflictPayload) (*AI
 			}
 			time.Sleep(time.Duration(attempt) * time.Second)
 		}
-		
+
 		req, err := http.NewRequest("POST", a.options.APIEndpoint, bytes.NewReader(requestData))
 		if err != nil {
 			lastErr = fmt.Errorf("failed to create request: %w", err)
 			continue
 		}
-		
+
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+a.options.APIKey)
 		req.Header.Set("User-Agent", "Syncwright/1.0.0")
-		
+
 		if a.options.Verbose {
 			fmt.Printf("Sending request to AI API: %s\n", a.options.APIEndpoint)
 		}
-		
+
 		resp, err := a.client.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("request failed: %w", err)
 			continue
 		}
 		defer resp.Body.Close()
-		
+
 		responseData, err := io.ReadAll(resp.Body)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response: %w", err)
 			continue
 		}
-		
+
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(responseData))
 			continue
 		}
-		
+
 		var aiResponse AIResolveResponse
 		if err := json.Unmarshal(responseData, &aiResponse); err != nil {
 			lastErr = fmt.Errorf("failed to unmarshal response: %w", err)
 			continue
 		}
-		
+
 		return &aiResponse, nil
 	}
-	
+
 	return nil, fmt.Errorf("all retry attempts failed, last error: %w", lastErr)
 }
 
 // filterResolutionsByConfidence filters resolutions based on confidence threshold
 func (a *AIApplyCommand) filterResolutionsByConfidence(resolutions []gitutils.ConflictResolution) []gitutils.ConflictResolution {
 	var filtered []gitutils.ConflictResolution
-	
+
 	for _, resolution := range resolutions {
 		if resolution.Confidence >= a.options.MinConfidence {
 			filtered = append(filtered, resolution)
 		}
 	}
-	
+
 	return filtered
 }
 
 // createBackups creates backup files before applying resolutions
 func (a *AIApplyCommand) createBackups(conflictPayload *payload.ConflictPayload) error {
 	var filesToBackup []string
-	
+
 	for _, file := range conflictPayload.Files {
 		filesToBackup = append(filesToBackup, file.Path)
 	}
-	
+
 	for _, filePath := range filesToBackup {
 		if err := gitutils.CreateBackup(a.options.RepoPath, filePath); err != nil {
 			return fmt.Errorf("failed to backup %s: %w", filePath, err)
 		}
 	}
-	
+
 	if a.options.Verbose {
 		fmt.Printf("Created backups for %d files\n", len(filesToBackup))
 	}
-	
+
 	return nil
 }
 
@@ -359,20 +359,20 @@ func (a *AIApplyCommand) createBackups(conflictPayload *payload.ConflictPayload)
 func (a *AIApplyCommand) askForConfirmation(resolutions []gitutils.ConflictResolution) bool {
 	fmt.Printf("\nAI has generated %d conflict resolutions.\n", len(resolutions))
 	fmt.Println("Preview of resolutions:")
-	
+
 	for i, resolution := range resolutions {
 		if i >= 3 { // Show only first 3 resolutions
 			fmt.Printf("... and %d more resolutions\n", len(resolutions)-3)
 			break
 		}
-		
-		fmt.Printf("\n%d. %s (lines %d-%d, confidence: %.2f)\n", 
+
+		fmt.Printf("\n%d. %s (lines %d-%d, confidence: %.2f)\n",
 			i+1, resolution.FilePath, resolution.StartLine, resolution.EndLine, resolution.Confidence)
-		
+
 		if resolution.Reasoning != "" {
 			fmt.Printf("   Reasoning: %s\n", resolution.Reasoning)
 		}
-		
+
 		// Show first few lines of resolution
 		if len(resolution.ResolvedLines) > 0 {
 			fmt.Printf("   Resolution preview:\n")
@@ -385,11 +385,11 @@ func (a *AIApplyCommand) askForConfirmation(resolutions []gitutils.ConflictResol
 			}
 		}
 	}
-	
+
 	fmt.Print("\nApply these resolutions? [y/N]: ")
 	var response string
 	fmt.Scanln(&response)
-	
+
 	return strings.ToLower(strings.TrimSpace(response)) == "y"
 }
 
@@ -400,17 +400,17 @@ func (a *AIApplyCommand) outputResults(result *AIApplyResult) error {
 		if err != nil {
 			return fmt.Errorf("failed to marshal results: %w", err)
 		}
-		
+
 		err = os.WriteFile(a.options.OutputFile, data, 0644)
 		if err != nil {
 			return fmt.Errorf("failed to write results to file: %w", err)
 		}
-		
+
 		if a.options.Verbose {
 			fmt.Printf("Results written to: %s\n", a.options.OutputFile)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -425,7 +425,7 @@ func ApplyAIResolutions(payloadFile, repoPath, apiKey string) (*AIApplyResult, e
 		Verbose:     true,
 		BackupFiles: true,
 	}
-	
+
 	cmd := NewAIApplyCommand(options)
 	return cmd.Execute()
 }
@@ -440,7 +440,7 @@ func ApplyAIResolutionsDryRun(payloadFile, repoPath, apiKey string) (*AIApplyRes
 		Verbose:     true,
 		BackupFiles: false,
 	}
-	
+
 	cmd := NewAIApplyCommand(options)
 	return cmd.Execute()
 }

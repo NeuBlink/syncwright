@@ -151,8 +151,8 @@ type AIApplyResult struct {
 }
 
 type ConflictResolution struct {
-	ConflictID string `json:"conflict_id"`
-	Resolution string `json:"resolution"`
+	ConflictID string  `json:"conflict_id"`
+	Resolution string  `json:"resolution"`
 	Confidence float64 `json:"confidence"`
 }
 
@@ -193,7 +193,6 @@ func newAIApplyCmd() *cobra.Command {
 
 	return cmd
 }
-
 
 func newFormatCmd() *cobra.Command {
 	var (
@@ -264,7 +263,7 @@ Examples:
 			// Execute the format command
 			formatCmd := commands.NewFormatCommand(options)
 			result, err := formatCmd.Execute()
-			
+
 			if err != nil {
 				return fmt.Errorf("format command failed: %w", err)
 			}
@@ -282,17 +281,17 @@ Examples:
 	// Output options
 	cmd.Flags().StringVarP(&outputFile, "out", "o", "", "Output file for format results (default: stdout)")
 	cmd.Flags().StringVar(&outputFormat, "format", "json", "Output format: json, text")
-	
+
 	// Execution options
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be formatted without making changes")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 	cmd.Flags().IntVar(&timeout, "timeout", 30, "Timeout for each formatter in seconds")
 	cmd.Flags().IntVar(&concurrency, "concurrency", 1, "Number of files to format concurrently")
-	
+
 	// Formatter selection
 	cmd.Flags().StringSliceVar(&preferredFormatters, "prefer-formatter", nil, "Preferred formatters to use (e.g., goimports,prettier)")
 	cmd.Flags().StringSliceVar(&excludeFormatters, "exclude-formatter", nil, "Formatters to exclude (e.g., gofmt,eslint)")
-	
+
 	// File selection
 	cmd.Flags().StringSliceVar(&includeExtensions, "include-ext", nil, "Only format files with these extensions (e.g., go,js,py)")
 	cmd.Flags().StringSliceVar(&excludeExtensions, "exclude-ext", nil, "Exclude files with these extensions")
@@ -304,16 +303,16 @@ Examples:
 
 // ValidateResult represents the output of the validate command
 type ValidateResult struct {
-	ValidationPassed bool               `json:"validation_passed"`
-	Issues           []ValidationIssue  `json:"issues"`
-	Metadata         ValidateMetadata   `json:"metadata"`
+	ValidationPassed bool              `json:"validation_passed"`
+	Issues           []ValidationIssue `json:"issues"`
+	Metadata         ValidateMetadata  `json:"metadata"`
 }
 
 type ValidationIssue struct {
-	File        string `json:"file"`
-	Line        int    `json:"line"`
-	Message     string `json:"message"`
-	Severity    string `json:"severity"`
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Message  string `json:"message"`
+	Severity string `json:"severity"`
 }
 
 type ValidateMetadata struct {
@@ -366,10 +365,10 @@ func newCommitCmd() *cobra.Command {
 
 func newResolveCmd() *cobra.Command {
 	var (
-		maxTokens int
-		aiMode    bool
-		verbose   bool
-		dryRun    bool
+		maxTokens  int
+		aiMode     bool
+		verbose    bool
+		dryRun     bool
 		confidence float64
 	)
 
@@ -392,7 +391,7 @@ suitable for CI/CD environments and automated conflict resolution.`,
 				return fmt.Errorf("conflict detection failed: %w", err)
 			}
 
-			if len(detectResult.Conflicts) == 0 {
+			if len(detectResult.ConflictReport.ConflictedFiles) == 0 {
 				if verbose {
 					fmt.Println("✅ No conflicts detected")
 				}
@@ -400,17 +399,17 @@ suitable for CI/CD environments and automated conflict resolution.`,
 			}
 
 			if verbose {
-				fmt.Printf("📋 Found %d conflicts\n", len(detectResult.Conflicts))
+				fmt.Printf("📋 Found %d conflicts\n", len(detectResult.ConflictReport.ConflictedFiles))
 			}
 
 			if !aiMode {
-				fmt.Printf("Found %d conflicts. Use --ai flag to resolve with AI assistance.\n", len(detectResult.Conflicts))
+				fmt.Printf("Found %d conflicts. Use --ai flag to resolve with AI assistance.\n", len(detectResult.ConflictReport.ConflictedFiles))
 				return nil
 			}
 
 			// For now, provide basic conflict information
 			if verbose {
-				fmt.Printf("🤖 AI resolution would process %d conflicts\n", len(detectResult.Conflicts))
+				fmt.Printf("🤖 AI resolution would process %d conflicts\n", len(detectResult.ConflictReport.ConflictedFiles))
 				if maxTokens == -1 {
 					fmt.Println("📊 Using unlimited tokens for AI processing")
 				} else {
@@ -419,12 +418,12 @@ suitable for CI/CD environments and automated conflict resolution.`,
 			}
 
 			if dryRun {
-				fmt.Printf("Dry run: Would resolve %d conflicts with AI assistance\n", len(detectResult.Conflicts))
+				fmt.Printf("Dry run: Would resolve %d conflicts with AI assistance\n", len(detectResult.ConflictReport.ConflictedFiles))
 				return nil
 			}
 
 			// TODO: Complete the pipeline with payload generation and AI application
-			fmt.Printf("Detected %d conflicts. Full AI resolution pipeline coming soon.\n", len(detectResult.Conflicts))
+			fmt.Printf("Detected %d conflicts. Full AI resolution pipeline coming soon.\n", len(detectResult.ConflictReport.ConflictedFiles))
 			fmt.Println("For now, use the individual commands: detect -> payload -> ai-apply")
 
 			return nil

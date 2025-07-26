@@ -74,7 +74,7 @@ func (v *ValidateCommand) Execute() error {
 				WarningIssues:      0,
 			},
 		}
-		
+
 		if v.options.Verbose {
 			fmt.Fprintf(os.Stderr, "Warning: Validation encountered errors but continuing: %v\n", err)
 		}

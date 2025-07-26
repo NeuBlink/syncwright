@@ -61,39 +61,39 @@ type ValidationIssue struct {
 
 // CommandResult represents the result of executing a validation command
 type CommandResult struct {
-	Command     ValidationCommand `json:"command"`
-	Success     bool              `json:"success"`
-	ExitCode    int               `json:"exit_code"`
-	Stdout      string            `json:"stdout"`
-	Stderr      string            `json:"stderr"`
-	Duration    time.Duration     `json:"duration"`
-	Error       string            `json:"error,omitempty"`
-	Skipped     bool              `json:"skipped"`
-	SkipReason  string            `json:"skip_reason,omitempty"`
+	Command    ValidationCommand `json:"command"`
+	Success    bool              `json:"success"`
+	ExitCode   int               `json:"exit_code"`
+	Stdout     string            `json:"stdout"`
+	Stderr     string            `json:"stderr"`
+	Duration   time.Duration     `json:"duration"`
+	Error      string            `json:"error,omitempty"`
+	Skipped    bool              `json:"skipped"`
+	SkipReason string            `json:"skip_reason,omitempty"`
 }
 
 // ValidationReport represents the complete validation report
 type ValidationReport struct {
-	Project         ProjectInfo     `json:"project"`
-	ValidationTime  time.Time       `json:"validation_time"`
-	OverallSuccess  bool            `json:"overall_success"`
-	CommandResults  []CommandResult `json:"command_results"`
-	FileResults     []ValidationResult `json:"file_results"`
-	Summary         ValidationSummary  `json:"summary"`
+	Project        ProjectInfo        `json:"project"`
+	ValidationTime time.Time          `json:"validation_time"`
+	OverallSuccess bool               `json:"overall_success"`
+	CommandResults []CommandResult    `json:"command_results"`
+	FileResults    []ValidationResult `json:"file_results"`
+	Summary        ValidationSummary  `json:"summary"`
 }
 
 // ValidationSummary provides a summary of validation results
 type ValidationSummary struct {
-	TotalCommands    int `json:"total_commands"`
+	TotalCommands      int `json:"total_commands"`
 	SuccessfulCommands int `json:"successful_commands"`
-	FailedCommands   int `json:"failed_commands"`
-	SkippedCommands  int `json:"skipped_commands"`
-	TotalFiles       int `json:"total_files"`
-	ValidFiles       int `json:"valid_files"`
-	InvalidFiles     int `json:"invalid_files"`
-	TotalIssues      int `json:"total_issues"`
-	ErrorIssues      int `json:"error_issues"`
-	WarningIssues    int `json:"warning_issues"`
+	FailedCommands     int `json:"failed_commands"`
+	SkippedCommands    int `json:"skipped_commands"`
+	TotalFiles         int `json:"total_files"`
+	ValidFiles         int `json:"valid_files"`
+	InvalidFiles       int `json:"invalid_files"`
+	TotalIssues        int `json:"total_issues"`
+	ErrorIssues        int `json:"error_issues"`
+	WarningIssues      int `json:"warning_issues"`
 }
 
 // ValidateFile performs comprehensive validation on a file
@@ -228,15 +228,15 @@ func DiscoverProject(rootPath string) (*ProjectInfo, error) {
 
 	// Check for specific project files to determine type
 	projectFiles := map[string]ProjectType{
-		"go.mod":         ProjectTypeGo,
-		"go.sum":         ProjectTypeGo,
-		"package.json":   ProjectTypeJavaScript,
-		"tsconfig.json":  ProjectTypeTypeScript,
-		"pyproject.toml": ProjectTypePython,
-		"setup.py":       ProjectTypePython,
+		"go.mod":           ProjectTypeGo,
+		"go.sum":           ProjectTypeGo,
+		"package.json":     ProjectTypeJavaScript,
+		"tsconfig.json":    ProjectTypeTypeScript,
+		"pyproject.toml":   ProjectTypePython,
+		"setup.py":         ProjectTypePython,
 		"requirements.txt": ProjectTypePython,
-		"Cargo.toml":     ProjectTypeRust,
-		"Cargo.lock":     ProjectTypeRust,
+		"Cargo.toml":       ProjectTypeRust,
+		"Cargo.lock":       ProjectTypeRust,
 	}
 
 	// Scan for project files - continue even if some checks fail
@@ -245,8 +245,8 @@ func DiscoverProject(rootPath string) (*ProjectInfo, error) {
 		if _, err := os.Stat(filePath); err == nil {
 			info.ConfigFiles = append(info.ConfigFiles, filename)
 			// Set project type to the most specific one found
-			if info.Type == ProjectTypeGeneric || 
-			   (projectType == ProjectTypeTypeScript && info.Type == ProjectTypeJavaScript) {
+			if info.Type == ProjectTypeGeneric ||
+				(projectType == ProjectTypeTypeScript && info.Type == ProjectTypeJavaScript) {
 				info.Type = projectType
 			}
 		}
@@ -260,7 +260,7 @@ func DiscoverProject(rootPath string) (*ProjectInfo, error) {
 				info.DetectedTools = []string{}
 			}
 		}()
-		
+
 		switch info.Type {
 		case ProjectTypeGo:
 			info.DetectedTools = detectGoTools(rootPath)
@@ -281,12 +281,12 @@ func DiscoverProject(rootPath string) (*ProjectInfo, error) {
 // detectGoTools detects available Go validation tools
 func detectGoTools(rootPath string) []string {
 	var tools []string
-	
+
 	// Check for go command
 	if _, err := exec.LookPath("go"); err == nil {
 		tools = append(tools, "go build", "go test", "go vet")
 	}
-	
+
 	// Check for additional Go tools
 	additionalTools := []string{"golint", "gofmt", "staticcheck", "gosec"}
 	for _, tool := range additionalTools {
@@ -294,18 +294,18 @@ func detectGoTools(rootPath string) []string {
 			tools = append(tools, tool)
 		}
 	}
-	
+
 	return tools
 }
 
 // detectNodeTools detects available Node.js/npm validation tools
 func detectNodeTools(rootPath string) []string {
 	var tools []string
-	
+
 	// Check for npm/yarn
 	if _, err := exec.LookPath("npm"); err == nil {
 		tools = append(tools, "npm")
-		
+
 		// Check for common npm scripts
 		packageJSONPath := filepath.Join(rootPath, "package.json")
 		if scripts := detectNpmScripts(packageJSONPath); len(scripts) > 0 {
@@ -314,11 +314,11 @@ func detectNodeTools(rootPath string) []string {
 			}
 		}
 	}
-	
+
 	if _, err := exec.LookPath("yarn"); err == nil {
 		tools = append(tools, "yarn")
 	}
-	
+
 	// Check for standalone tools
 	standaloneTools := []string{"eslint", "tsc", "prettier", "jest"}
 	for _, tool := range standaloneTools {
@@ -326,14 +326,14 @@ func detectNodeTools(rootPath string) []string {
 			tools = append(tools, tool)
 		}
 	}
-	
+
 	return tools
 }
 
 // detectPythonTools detects available Python validation tools
 func detectPythonTools(rootPath string) []string {
 	var tools []string
-	
+
 	// Check for Python interpreters
 	pythonCommands := []string{"python3", "python", "python3.11", "python3.10", "python3.9"}
 	for _, cmd := range pythonCommands {
@@ -342,7 +342,7 @@ func detectPythonTools(rootPath string) []string {
 			break // Only need one Python interpreter
 		}
 	}
-	
+
 	// Check for Python tools
 	pythonTools := []string{"pytest", "flake8", "mypy", "black", "isort", "pylint", "bandit"}
 	for _, tool := range pythonTools {
@@ -350,19 +350,19 @@ func detectPythonTools(rootPath string) []string {
 			tools = append(tools, tool)
 		}
 	}
-	
+
 	return tools
 }
 
 // detectRustTools detects available Rust validation tools
 func detectRustTools(rootPath string) []string {
 	var tools []string
-	
+
 	// Check for cargo
 	if _, err := exec.LookPath("cargo"); err == nil {
 		tools = append(tools, "cargo build", "cargo test", "cargo clippy", "cargo fmt")
 	}
-	
+
 	// Check for additional Rust tools
 	additionalTools := []string{"rustfmt", "clippy"}
 	for _, tool := range additionalTools {
@@ -370,14 +370,14 @@ func detectRustTools(rootPath string) []string {
 			tools = append(tools, tool)
 		}
 	}
-	
+
 	return tools
 }
 
 // detectGenericTools detects generic build tools
 func detectGenericTools(rootPath string) []string {
 	var tools []string
-	
+
 	// Check for Makefile
 	makefilePath := filepath.Join(rootPath, "Makefile")
 	if _, err := os.Stat(makefilePath); err == nil {
@@ -389,7 +389,7 @@ func detectGenericTools(rootPath string) []string {
 			}
 		}
 	}
-	
+
 	// Check for other build tools
 	buildTools := []string{"cmake", "ninja", "bazel"}
 	for _, tool := range buildTools {
@@ -397,27 +397,27 @@ func detectGenericTools(rootPath string) []string {
 			tools = append(tools, tool)
 		}
 	}
-	
+
 	return tools
 }
 
 // detectNpmScripts parses package.json to find available scripts
 func detectNpmScripts(packageJSONPath string) []string {
 	var scripts []string
-	
+
 	data, err := os.ReadFile(packageJSONPath)
 	if err != nil {
 		return scripts
 	}
-	
+
 	var packageJSON struct {
 		Scripts map[string]string `json:"scripts"`
 	}
-	
+
 	if err := json.Unmarshal(data, &packageJSON); err != nil {
 		return scripts
 	}
-	
+
 	// Common validation scripts
 	validationScripts := []string{"test", "build", "lint", "type-check", "format"}
 	for _, script := range validationScripts {
@@ -425,30 +425,30 @@ func detectNpmScripts(packageJSONPath string) []string {
 			scripts = append(scripts, script)
 		}
 	}
-	
+
 	return scripts
 }
 
 // detectMakeTargets parses Makefile to find common validation targets
 func detectMakeTargets(makefilePath string) []string {
 	var targets []string
-	
+
 	file, err := os.Open(makefilePath)
 	if err != nil {
 		return targets
 	}
 	defer file.Close()
-	
+
 	scanner := bufio.NewScanner(file)
 	validationTargets := map[string]bool{
-		"test": true,
-		"build": true,
-		"lint": true,
-		"check": true,
+		"test":     true,
+		"build":    true,
+		"lint":     true,
+		"check":    true,
 		"validate": true,
-		"format": true,
+		"format":   true,
 	}
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.Contains(line, ":") && !strings.HasPrefix(line, "#") {
@@ -461,7 +461,7 @@ func detectMakeTargets(makefilePath string) []string {
 			}
 		}
 	}
-	
+
 	return targets
 }
 
@@ -488,7 +488,7 @@ func BuildValidationCommands(projectInfo *ProjectInfo) []ValidationCommand {
 // buildGoCommands creates validation commands for Go projects
 func buildGoCommands(projectInfo *ProjectInfo) []ValidationCommand {
 	var commands []ValidationCommand
-	
+
 	// Essential Go commands
 	if isToolAvailable("go") {
 		commands = append(commands, ValidationCommand{
@@ -499,7 +499,7 @@ func buildGoCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Description: "Build Go project to check for compilation errors",
 			Required:    true,
 		})
-		
+
 		commands = append(commands, ValidationCommand{
 			Name:        "go_test",
 			Command:     "go",
@@ -508,7 +508,7 @@ func buildGoCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Description: "Run Go tests",
 			Required:    false,
 		})
-		
+
 		commands = append(commands, ValidationCommand{
 			Name:        "go_vet",
 			Command:     "go",
@@ -518,7 +518,7 @@ func buildGoCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Required:    false,
 		})
 	}
-	
+
 	// Additional Go tools
 	if isToolAvailable("gofmt") {
 		commands = append(commands, ValidationCommand{
@@ -530,7 +530,7 @@ func buildGoCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Required:    false,
 		})
 	}
-	
+
 	if isToolAvailable("staticcheck") {
 		commands = append(commands, ValidationCommand{
 			Name:        "staticcheck",
@@ -541,7 +541,7 @@ func buildGoCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Required:    false,
 		})
 	}
-	
+
 	if isToolAvailable("gosec") {
 		commands = append(commands, ValidationCommand{
 			Name:        "gosec",
@@ -552,23 +552,23 @@ func buildGoCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Required:    false,
 		})
 	}
-	
+
 	return commands
 }
 
 // buildNodeCommands creates validation commands for Node.js projects
 func buildNodeCommands(projectInfo *ProjectInfo) []ValidationCommand {
 	var commands []ValidationCommand
-	
+
 	// Check for npm scripts first
 	packageJSONPath := filepath.Join(projectInfo.RootPath, "package.json")
 	npmScripts := detectNpmScripts(packageJSONPath)
-	
+
 	if isToolAvailable("npm") {
 		for _, script := range npmScripts {
 			var required bool
 			var description string
-			
+
 			switch script {
 			case "build":
 				required = true
@@ -586,7 +586,7 @@ func buildNodeCommands(projectInfo *ProjectInfo) []ValidationCommand {
 				required = false
 				description = fmt.Sprintf("Run npm script: %s", script)
 			}
-			
+
 			commands = append(commands, ValidationCommand{
 				Name:        fmt.Sprintf("npm_%s", script),
 				Command:     "npm",
@@ -597,7 +597,7 @@ func buildNodeCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			})
 		}
 	}
-	
+
 	// Fallback to direct tool execution if npm scripts not available
 	if len(commands) == 0 {
 		if isToolAvailable("tsc") && projectInfo.Type == ProjectTypeTypeScript {
@@ -610,7 +610,7 @@ func buildNodeCommands(projectInfo *ProjectInfo) []ValidationCommand {
 				Required:    true,
 			})
 		}
-		
+
 		if isToolAvailable("eslint") {
 			commands = append(commands, ValidationCommand{
 				Name:        "eslint",
@@ -621,7 +621,7 @@ func buildNodeCommands(projectInfo *ProjectInfo) []ValidationCommand {
 				Required:    false,
 			})
 		}
-		
+
 		if isToolAvailable("jest") {
 			commands = append(commands, ValidationCommand{
 				Name:        "jest",
@@ -633,14 +633,14 @@ func buildNodeCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			})
 		}
 	}
-	
+
 	return commands
 }
 
 // buildPythonCommands creates validation commands for Python projects
 func buildPythonCommands(projectInfo *ProjectInfo) []ValidationCommand {
 	var commands []ValidationCommand
-	
+
 	// Find Python interpreter
 	pythonCmd := ""
 	pythonCommands := []string{"python3", "python", "python3.11", "python3.10", "python3.9"}
@@ -650,7 +650,7 @@ func buildPythonCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			break
 		}
 	}
-	
+
 	if pythonCmd != "" {
 		// Basic syntax check
 		commands = append(commands, ValidationCommand{
@@ -662,7 +662,7 @@ func buildPythonCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Required:    true,
 		})
 	}
-	
+
 	// Testing tools
 	if isToolAvailable("pytest") {
 		commands = append(commands, ValidationCommand{
@@ -674,7 +674,7 @@ func buildPythonCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Required:    false,
 		})
 	}
-	
+
 	// Linting tools
 	if isToolAvailable("flake8") {
 		commands = append(commands, ValidationCommand{
@@ -686,7 +686,7 @@ func buildPythonCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Required:    false,
 		})
 	}
-	
+
 	if isToolAvailable("mypy") {
 		commands = append(commands, ValidationCommand{
 			Name:        "mypy",
@@ -697,7 +697,7 @@ func buildPythonCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Required:    false,
 		})
 	}
-	
+
 	if isToolAvailable("black") {
 		commands = append(commands, ValidationCommand{
 			Name:        "black_check",
@@ -708,7 +708,7 @@ func buildPythonCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Required:    false,
 		})
 	}
-	
+
 	if isToolAvailable("bandit") {
 		commands = append(commands, ValidationCommand{
 			Name:        "bandit",
@@ -719,14 +719,14 @@ func buildPythonCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Required:    false,
 		})
 	}
-	
+
 	return commands
 }
 
 // buildRustCommands creates validation commands for Rust projects
 func buildRustCommands(projectInfo *ProjectInfo) []ValidationCommand {
 	var commands []ValidationCommand
-	
+
 	if isToolAvailable("cargo") {
 		commands = append(commands, ValidationCommand{
 			Name:        "cargo_build",
@@ -736,7 +736,7 @@ func buildRustCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Description: "Build Rust project",
 			Required:    true,
 		})
-		
+
 		commands = append(commands, ValidationCommand{
 			Name:        "cargo_test",
 			Command:     "cargo",
@@ -745,7 +745,7 @@ func buildRustCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Description: "Run Rust tests",
 			Required:    false,
 		})
-		
+
 		commands = append(commands, ValidationCommand{
 			Name:        "cargo_clippy",
 			Command:     "cargo",
@@ -754,7 +754,7 @@ func buildRustCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Description: "Run Clippy linter",
 			Required:    false,
 		})
-		
+
 		commands = append(commands, ValidationCommand{
 			Name:        "cargo_fmt_check",
 			Command:     "cargo",
@@ -764,14 +764,14 @@ func buildRustCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			Required:    false,
 		})
 	}
-	
+
 	return commands
 }
 
 // buildGenericCommands creates validation commands for generic projects
 func buildGenericCommands(projectInfo *ProjectInfo) []ValidationCommand {
 	var commands []ValidationCommand
-	
+
 	// Check for Makefile
 	makefilePath := filepath.Join(projectInfo.RootPath, "Makefile")
 	if _, err := os.Stat(makefilePath); err == nil && isToolAvailable("make") {
@@ -781,7 +781,7 @@ func buildGenericCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			if target == "build" || target == "test" {
 				required = target == "build"
 			}
-			
+
 			commands = append(commands, ValidationCommand{
 				Name:        fmt.Sprintf("make_%s", target),
 				Command:     "make",
@@ -792,7 +792,7 @@ func buildGenericCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			})
 		}
 	}
-	
+
 	return commands
 }
 
@@ -805,12 +805,12 @@ func isToolAvailable(tool string) bool {
 // ExecuteValidationCommands runs validation commands with timeout and error handling
 func ExecuteValidationCommands(commands []ValidationCommand, timeoutSeconds int) []CommandResult {
 	var results []CommandResult
-	
+
 	for _, cmd := range commands {
 		result := executeCommand(cmd, timeoutSeconds)
 		results = append(results, result)
 	}
-	
+
 	return results
 }
 
@@ -820,38 +820,38 @@ func executeCommand(cmd ValidationCommand, timeoutSeconds int) CommandResult {
 		Command: cmd,
 		Success: false,
 	}
-	
+
 	// Check if command is available
 	if !isToolAvailable(cmd.Command) {
 		result.Skipped = true
 		result.SkipReason = fmt.Sprintf("Command '%s' not available", cmd.Command)
 		return result
 	}
-	
+
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
-	
+
 	// Create command
 	execCmd := exec.CommandContext(ctx, cmd.Command, cmd.Args...)
 	if cmd.WorkingDir != "" {
 		execCmd.Dir = cmd.WorkingDir
 	}
-	
+
 	// Capture output
 	var stdout, stderr strings.Builder
 	execCmd.Stdout = &stdout
 	execCmd.Stderr = &stderr
-	
+
 	// Record start time
 	startTime := time.Now()
-	
+
 	// Execute command
 	err := execCmd.Run()
 	result.Duration = time.Since(startTime)
 	result.Stdout = stdout.String()
 	result.Stderr = stderr.String()
-	
+
 	// Handle result
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
@@ -868,7 +868,7 @@ func executeCommand(cmd ValidationCommand, timeoutSeconds int) CommandResult {
 		result.Success = true
 		result.ExitCode = 0
 	}
-	
+
 	return result
 }
 
@@ -877,7 +877,7 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = 300 // Default 5 minute timeout
 	}
-	
+
 	// Initialize empty report in case of early failures
 	report := &ValidationReport{
 		ValidationTime: time.Now(),
@@ -885,7 +885,7 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 		CommandResults: []CommandResult{},
 		FileResults:    []ValidationResult{},
 	}
-	
+
 	// Discover project - if this fails, we can still proceed with minimal validation
 	projectInfo, err := DiscoverProject(rootPath)
 	if err != nil {
@@ -898,7 +898,7 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 		}
 	}
 	report.Project = *projectInfo
-	
+
 	// Build validation commands - this should never fail but be safe
 	var commands []ValidationCommand
 	func() {
@@ -910,11 +910,11 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 		}()
 		commands = BuildValidationCommands(projectInfo)
 	}()
-	
+
 	// Execute validation commands - individual command failures are captured
 	commandResults := ExecuteValidationCommands(commands, timeoutSeconds)
 	report.CommandResults = commandResults
-	
+
 	// Validate individual files for conflict markers - failures are non-critical
 	fileResults, err := validateProjectFiles(rootPath)
 	if err != nil {
@@ -923,10 +923,10 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 		fileResults = []ValidationResult{}
 	}
 	report.FileResults = fileResults
-	
+
 	// Calculate summary - this should be safe with empty slices
 	report.Summary = calculateSummary(commandResults, fileResults)
-	
+
 	// Determine overall success
 	// Success if no required commands failed and no critical file issues
 	report.OverallSuccess = true
@@ -936,7 +936,7 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 			break
 		}
 	}
-	
+
 	// Check for critical file issues
 	for _, fileResult := range fileResults {
 		if !fileResult.ConflictFree {
@@ -949,20 +949,20 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 			}
 		}
 	}
-	
+
 	return report, nil
 }
 
 // validateProjectFiles validates files in the project for basic issues
 func validateProjectFiles(rootPath string) ([]ValidationResult, error) {
 	var results []ValidationResult
-	
+
 	// Find relevant files to validate
 	filesToCheck, err := findFilesToValidate(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find files to validate: %w", err)
 	}
-	
+
 	for _, filePath := range filesToCheck {
 		result, err := ValidateFile(filePath)
 		if err != nil {
@@ -971,14 +971,14 @@ func validateProjectFiles(rootPath string) ([]ValidationResult, error) {
 		}
 		results = append(results, *result)
 	}
-	
+
 	return results, nil
 }
 
 // findFilesToValidate finds files that should be validated
 func findFilesToValidate(rootPath string) ([]string, error) {
 	var files []string
-	
+
 	// File patterns to validate
 	patterns := []string{
 		"*.go",
@@ -997,17 +997,17 @@ func findFilesToValidate(rootPath string) ([]string, error) {
 		"*.yaml",
 		"*.yml",
 	}
-	
+
 	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Continue walking even if there's an error
 		}
-		
+
 		// Skip directories and hidden files
 		if info.IsDir() || strings.HasPrefix(info.Name(), ".") {
 			return nil
 		}
-		
+
 		// Skip common directories that should not be validated
 		relPath, _ := filepath.Rel(rootPath, path)
 		skipDirs := []string{"node_modules", "vendor", "target", ".git", "dist", "build"}
@@ -1016,7 +1016,7 @@ func findFilesToValidate(rootPath string) ([]string, error) {
 				return nil
 			}
 		}
-		
+
 		// Check if file matches any pattern
 		for _, pattern := range patterns {
 			matched, _ := filepath.Match(pattern, info.Name())
@@ -1025,10 +1025,10 @@ func findFilesToValidate(rootPath string) ([]string, error) {
 				break
 			}
 		}
-		
+
 		return nil
 	})
-	
+
 	return files, err
 }
 
@@ -1038,7 +1038,7 @@ func calculateSummary(commandResults []CommandResult, fileResults []ValidationRe
 		TotalCommands: len(commandResults),
 		TotalFiles:    len(fileResults),
 	}
-	
+
 	// Count command results
 	for _, result := range commandResults {
 		if result.Success {
@@ -1049,7 +1049,7 @@ func calculateSummary(commandResults []CommandResult, fileResults []ValidationRe
 			summary.FailedCommands++
 		}
 	}
-	
+
 	// Count file results and issues
 	for _, result := range fileResults {
 		if result.IsValid {
@@ -1057,7 +1057,7 @@ func calculateSummary(commandResults []CommandResult, fileResults []ValidationRe
 		} else {
 			summary.InvalidFiles++
 		}
-		
+
 		for _, issue := range result.Issues {
 			summary.TotalIssues++
 			if issue.Severity == "error" {
@@ -1067,7 +1067,7 @@ func calculateSummary(commandResults []CommandResult, fileResults []ValidationRe
 			}
 		}
 	}
-	
+
 	return summary
 }
 

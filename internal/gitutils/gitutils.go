@@ -64,10 +64,10 @@ func CommitChanges(message string) error {
 func GetRecentlyModifiedFiles(repoPath string, days int) ([]string, error) {
 	// Use git log to find files modified in the last N days
 	since := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
-	
+
 	cmd := exec.Command("git", "log", "--name-only", "--pretty=format:", "--since="+since)
 	cmd.Dir = repoPath
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get recently modified files: %w", err)
@@ -97,7 +97,7 @@ func GetRecentlyModifiedFiles(repoPath string, days int) ([]string, error) {
 func GetAllTrackedFiles(repoPath string) ([]string, error) {
 	cmd := exec.Command("git", "ls-files")
 	cmd.Dir = repoPath
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tracked files: %w", err)
@@ -119,4 +119,3 @@ func GetAllTrackedFiles(repoPath string) ([]string, error) {
 
 	return existingFiles, nil
 }
-

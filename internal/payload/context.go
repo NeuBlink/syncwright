@@ -13,104 +13,104 @@ import (
 // DetectLanguage determines the programming language from file extension
 func DetectLanguage(filePath string) string {
 	ext := strings.ToLower(filepath.Ext(filePath))
-	
+
 	languageMap := map[string]string{
-		".go":     "go",
-		".js":     "javascript",
-		".jsx":    "javascript",
-		".ts":     "typescript",
-		".tsx":    "typescript",
-		".py":     "python",
-		".pyx":    "python",
-		".pyi":    "python",
-		".java":   "java",
-		".kt":     "kotlin",
-		".scala":  "scala",
-		".c":      "c",
-		".h":      "c",
-		".cpp":    "cpp",
-		".cxx":    "cpp",
-		".cc":     "cpp",
-		".hpp":    "cpp",
-		".cs":     "csharp",
-		".fs":     "fsharp",
-		".rb":     "ruby",
-		".php":    "php",
-		".rs":     "rust",
-		".swift":  "swift",
-		".m":      "objective-c",
-		".mm":     "objective-c",
-		".dart":   "dart",
-		".r":      "r",
-		".R":      "r",
-		".sql":    "sql",
-		".sh":     "shell",
-		".bash":   "shell",
-		".zsh":    "shell",
-		".fish":   "shell",
-		".ps1":    "powershell",
-		".vim":    "vim",
-		".lua":    "lua",
-		".pl":     "perl",
-		".hs":     "haskell",
-		".ml":     "ocaml",
-		".clj":    "clojure",
-		".ex":     "elixir",
-		".exs":    "elixir",
-		".erl":    "erlang",
-		".nim":    "nim",
-		".zig":    "zig",
-		".v":      "vlang",
-		".jl":     "julia",
-		".html":   "html",
-		".css":    "css",
-		".scss":   "scss",
-		".sass":   "sass",
-		".less":   "less",
-		".xml":    "xml",
-		".json":   "json",
-		".yaml":   "yaml",
-		".yml":    "yaml",
-		".toml":   "toml",
-		".ini":    "ini",
-		".cfg":    "config",
-		".conf":   "config",
-		".md":     "markdown",
-		".tex":    "latex",
+		".go":    "go",
+		".js":    "javascript",
+		".jsx":   "javascript",
+		".ts":    "typescript",
+		".tsx":   "typescript",
+		".py":    "python",
+		".pyx":   "python",
+		".pyi":   "python",
+		".java":  "java",
+		".kt":    "kotlin",
+		".scala": "scala",
+		".c":     "c",
+		".h":     "c",
+		".cpp":   "cpp",
+		".cxx":   "cpp",
+		".cc":    "cpp",
+		".hpp":   "cpp",
+		".cs":    "csharp",
+		".fs":    "fsharp",
+		".rb":    "ruby",
+		".php":   "php",
+		".rs":    "rust",
+		".swift": "swift",
+		".m":     "objective-c",
+		".mm":    "objective-c",
+		".dart":  "dart",
+		".r":     "r",
+		".R":     "r",
+		".sql":   "sql",
+		".sh":    "shell",
+		".bash":  "shell",
+		".zsh":   "shell",
+		".fish":  "shell",
+		".ps1":   "powershell",
+		".vim":   "vim",
+		".lua":   "lua",
+		".pl":    "perl",
+		".hs":    "haskell",
+		".ml":    "ocaml",
+		".clj":   "clojure",
+		".ex":    "elixir",
+		".exs":   "elixir",
+		".erl":   "erlang",
+		".nim":   "nim",
+		".zig":   "zig",
+		".v":     "vlang",
+		".jl":    "julia",
+		".html":  "html",
+		".css":   "css",
+		".scss":  "scss",
+		".sass":  "sass",
+		".less":  "less",
+		".xml":   "xml",
+		".json":  "json",
+		".yaml":  "yaml",
+		".yml":   "yaml",
+		".toml":  "toml",
+		".ini":   "ini",
+		".cfg":   "config",
+		".conf":  "config",
+		".md":    "markdown",
+		".tex":   "latex",
 	}
-	
+
 	if lang, exists := languageMap[ext]; exists {
 		return lang
 	}
-	
+
 	// Check filename for special cases
 	fileName := filepath.Base(filePath)
 	fileNameMap := map[string]string{
-		"Makefile":    "makefile",
-		"Dockerfile":  "dockerfile",
-		"Vagrantfile": "ruby",
-		"Rakefile":    "ruby",
-		"Gemfile":     "ruby",
-		"Podfile":     "ruby",
+		"Makefile":       "makefile",
+		"Dockerfile":     "dockerfile",
+		"Vagrantfile":    "ruby",
+		"Rakefile":       "ruby",
+		"Gemfile":        "ruby",
+		"Podfile":        "ruby",
 		"CMakeLists.txt": "cmake",
 	}
-	
+
 	if lang, exists := fileNameMap[fileName]; exists {
 		return lang
 	}
-	
+
 	return "text"
 }
 
 // DetectFileType determines the general file type
 func DetectFileType(filePath string) string {
 	language := DetectLanguage(filePath)
-	
+
 	switch language {
 	case "go", "javascript", "typescript", "python", "java", "kotlin", "scala",
-		 "c", "cpp", "csharp", "fsharp", "ruby", "php", "rust", "swift",
-		 "objective-c", "dart", "r", "perl", "haskell", "ocaml", "clojure",
-		 "elixir", "erlang", "nim", "zig", "vlang", "julia":
+		"c", "cpp", "csharp", "fsharp", "ruby", "php", "rust", "swift",
+		"objective-c", "dart", "r", "perl", "haskell", "ocaml", "clojure",
+		"elixir", "erlang", "nim", "zig", "vlang", "julia":
 		return "source"
 	case "html", "css", "scss", "sass", "less":
 		return "web"
@@ -132,74 +132,74 @@ func DetectFileType(filePath string) string {
 // extractRepositoryContext extracts repository-wide context
 func (pb *PayloadBuilder) extractRepositoryContext(repoPath string) (RepositoryContext, error) {
 	context := RepositoryContext{}
-	
+
 	// Extract branch info
 	branchInfo, err := pb.extractBranchInfo(repoPath)
 	if err == nil {
 		context.BranchInfo = branchInfo
 	}
-	
+
 	// Extract commit info
 	commitInfo, err := pb.extractCommitInfo(repoPath)
 	if err == nil {
 		context.CommitInfo = commitInfo
 	}
-	
+
 	// Extract project info
 	projectInfo, err := pb.extractProjectInfo(repoPath)
 	if err == nil {
 		context.ProjectInfo = projectInfo
 	}
-	
+
 	return context, nil
 }
 
 // extractBranchInfo extracts information about branches involved in the merge
 func (pb *PayloadBuilder) extractBranchInfo(repoPath string) (BranchInfo, error) {
 	info := BranchInfo{}
-	
+
 	// Get current branch
 	cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
 	cmd.Dir = repoPath
 	if output, err := cmd.Output(); err == nil {
 		info.CurrentBranch = strings.TrimSpace(string(output))
 	}
-	
+
 	// Get merge head branch name
 	cmd = exec.Command("git", "symbolic-ref", "--short", "MERGE_HEAD")
 	cmd.Dir = repoPath
 	if output, err := cmd.Output(); err == nil {
 		info.MergeBranch = strings.TrimSpace(string(output))
 	}
-	
+
 	// Get merge base
 	cmd = exec.Command("git", "merge-base", "HEAD", "MERGE_HEAD")
 	cmd.Dir = repoPath
 	if output, err := cmd.Output(); err == nil {
 		info.MergeBase = strings.TrimSpace(string(output))
 	}
-	
+
 	return info, nil
 }
 
 // extractCommitInfo extracts commit information
 func (pb *PayloadBuilder) extractCommitInfo(repoPath string) (CommitInfo, error) {
 	info := CommitInfo{}
-	
+
 	// Get HEAD commit
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Dir = repoPath
 	if output, err := cmd.Output(); err == nil {
 		info.OursCommit = strings.TrimSpace(string(output))
 	}
-	
+
 	// Get MERGE_HEAD commit
 	cmd = exec.Command("git", "rev-parse", "MERGE_HEAD")
 	cmd.Dir = repoPath
 	if output, err := cmd.Output(); err == nil {
 		info.TheirsCommit = strings.TrimSpace(string(output))
 	}
-	
+
 	// Get merge base commit
 	if info.OursCommit != "" && info.TheirsCommit != "" {
 		cmd = exec.Command("git", "merge-base", info.OursCommit, info.TheirsCommit)
@@ -208,7 +208,7 @@ func (pb *PayloadBuilder) extractCommitInfo(repoPath string) (CommitInfo, error)
 			info.BaseCommit = strings.TrimSpace(string(output))
 		}
 	}
-	
+
 	return info, nil
 }
 
@@ -217,27 +217,27 @@ func (pb *PayloadBuilder) extractProjectInfo(repoPath string) (ProjectInfo, erro
 	info := ProjectInfo{
 		Conventions: make(map[string]string),
 	}
-	
+
 	// Detect primary language by counting files
 	languageCounts := make(map[string]int)
 	filepath.Walk(repoPath, func(path string, fileInfo os.FileInfo, err error) error {
 		if err != nil || fileInfo.IsDir() {
 			return nil
 		}
-		
+
 		// Skip hidden and excluded directories
-		if strings.Contains(path, "/.") || strings.Contains(path, "/node_modules/") || 
-		   strings.Contains(path, "/vendor/") || strings.Contains(path, "/.git/") {
+		if strings.Contains(path, "/.") || strings.Contains(path, "/node_modules/") ||
+			strings.Contains(path, "/vendor/") || strings.Contains(path, "/.git/") {
 			return nil
 		}
-		
+
 		lang := DetectLanguage(path)
 		if lang != "text" {
 			languageCounts[lang]++
 		}
 		return nil
 	})
-	
+
 	// Find most common language
 	maxCount := 0
 	for lang, count := range languageCounts {
@@ -246,42 +246,42 @@ func (pb *PayloadBuilder) extractProjectInfo(repoPath string) (ProjectInfo, erro
 			info.Language = lang
 		}
 	}
-	
+
 	// Detect build tools and frameworks
 	info.BuildTool = pb.detectBuildTool(repoPath)
 	info.Framework = pb.detectFramework(repoPath, info.Language)
-	
+
 	// Find config files
 	info.ConfigFiles = pb.findConfigFiles(repoPath)
-	
+
 	return info, nil
 }
 
 // detectBuildTool detects the build tool used in the project
 func (pb *PayloadBuilder) detectBuildTool(repoPath string) string {
 	buildFiles := map[string]string{
-		"package.json":    "npm",
-		"yarn.lock":       "yarn",
-		"pnpm-lock.yaml":  "pnpm",
-		"Cargo.toml":      "cargo",
-		"go.mod":          "go",
-		"pom.xml":         "maven",
-		"build.gradle":    "gradle",
-		"Makefile":        "make",
-		"CMakeLists.txt":  "cmake",
-		"setup.py":        "setuptools",
-		"pyproject.toml":  "poetry",
-		"Pipfile":         "pipenv",
-		"composer.json":   "composer",
-		"Gemfile":         "bundler",
+		"package.json":   "npm",
+		"yarn.lock":      "yarn",
+		"pnpm-lock.yaml": "pnpm",
+		"Cargo.toml":     "cargo",
+		"go.mod":         "go",
+		"pom.xml":        "maven",
+		"build.gradle":   "gradle",
+		"Makefile":       "make",
+		"CMakeLists.txt": "cmake",
+		"setup.py":       "setuptools",
+		"pyproject.toml": "poetry",
+		"Pipfile":        "pipenv",
+		"composer.json":  "composer",
+		"Gemfile":        "bundler",
 	}
-	
+
 	for file, tool := range buildFiles {
 		if _, err := os.Stat(filepath.Join(repoPath, file)); err == nil {
 			return tool
 		}
 	}
-	
+
 	return ""
 }
 
@@ -399,7 +399,7 @@ func (pb *PayloadBuilder) detectJavaFramework(repoPath string) string {
 // findConfigFiles finds configuration files in the repository
 func (pb *PayloadBuilder) findConfigFiles(repoPath string) []string {
 	var configFiles []string
-	
+
 	configPatterns := []string{
 		"*.json", "*.yaml", "*.yml", "*.toml", "*.ini", "*.cfg", "*.conf",
 		"Dockerfile", ".dockerignore", "docker-compose.yml",
@@ -409,7 +409,7 @@ func (pb *PayloadBuilder) findConfigFiles(repoPath string) []string {
 		"pytest.ini", "setup.cfg", "tox.ini", ".flake8",
 		"Cargo.toml", "rust-toolchain", ".rustfmt.toml",
 	}
-	
+
 	for _, pattern := range configPatterns {
 		matches, _ := filepath.Glob(filepath.Join(repoPath, pattern))
 		for _, match := range matches {
@@ -417,7 +417,7 @@ func (pb *PayloadBuilder) findConfigFiles(repoPath string) []string {
 			configFiles = append(configFiles, relPath)
 		}
 	}
-	
+
 	return configFiles
 }
 
@@ -427,17 +427,17 @@ func (pb *PayloadBuilder) extractFileMetadata(filePath, repoPath string, content
 		Encoding:    "utf-8", // Default assumption
 		LineEndings: "lf",    // Default assumption
 	}
-	
+
 	fullPath := filepath.Join(repoPath, filePath)
-	
+
 	// Get file size
 	if stat, err := os.Stat(fullPath); err == nil {
 		metadata.Size = stat.Size()
 	}
-	
+
 	// Count lines
 	metadata.LineCount = len(content)
-	
+
 	// Detect line endings from actual file content
 	if file, err := os.Open(fullPath); err == nil {
 		defer file.Close()
@@ -455,13 +455,13 @@ func (pb *PayloadBuilder) extractFileMetadata(filePath, repoPath string, content
 			}
 		}
 	}
-	
+
 	// Check if file has tests
 	metadata.HasTests = pb.hasAssociatedTests(filePath, repoPath)
-	
+
 	// Check if file is generated
 	metadata.IsGenerated = pb.isGeneratedFile(filePath, content)
-	
+
 	return metadata, nil
 }
 
@@ -469,7 +469,7 @@ func (pb *PayloadBuilder) extractFileMetadata(filePath, repoPath string, content
 func (pb *PayloadBuilder) hasAssociatedTests(filePath, repoPath string) bool {
 	baseName := strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
 	dir := filepath.Dir(filePath)
-	
+
 	testPatterns := []string{
 		fmt.Sprintf("%s_test.*", baseName),
 		fmt.Sprintf("%s.test.*", baseName),
@@ -477,14 +477,14 @@ func (pb *PayloadBuilder) hasAssociatedTests(filePath, repoPath string) bool {
 		fmt.Sprintf("%s_spec.*", baseName),
 		fmt.Sprintf("%s.spec.*", baseName),
 	}
-	
+
 	for _, pattern := range testPatterns {
 		matches, _ := filepath.Glob(filepath.Join(repoPath, dir, pattern))
 		if len(matches) > 0 {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -499,31 +499,31 @@ func (pb *PayloadBuilder) isGeneratedFile(filePath string, content []string) boo
 		*regexp.MustCompile(`(?i).*_gen\..*`),
 		*regexp.MustCompile(`(?i).*\.pb\..*`),
 	}
-	
+
 	for _, pattern := range generatedPatterns {
 		if pattern.MatchString(fileName) {
 			return true
 		}
 	}
-	
+
 	// Check file content for generation markers
 	if len(content) > 0 {
 		first10Lines := content
 		if len(content) > 10 {
 			first10Lines = content[:10]
 		}
-		
+
 		for _, line := range first10Lines {
 			lower := strings.ToLower(line)
 			if strings.Contains(lower, "auto-generated") ||
-			   strings.Contains(lower, "automatically generated") ||
-			   strings.Contains(lower, "do not edit") ||
-			   strings.Contains(lower, "generated by") ||
-			   strings.Contains(lower, "code generated") {
+				strings.Contains(lower, "automatically generated") ||
+				strings.Contains(lower, "do not edit") ||
+				strings.Contains(lower, "generated by") ||
+				strings.Contains(lower, "code generated") {
 				return true
 			}
 		}
 	}
-	
+
 	return false
 }

@@ -14,28 +14,28 @@ import (
 
 // FormatOptions contains options for the format command
 type FormatOptions struct {
-	RepoPath            string        `json:"repo_path"`
-	OutputFile          string        `json:"output_file"`
-	OutputFormat        string        `json:"output_format"` // "json", "text"
-	DryRun              bool          `json:"dry_run"`
-	Verbose             bool          `json:"verbose"`
-	PreferredFormatters []string      `json:"preferred_formatters,omitempty"`
-	ExcludeFormatters   []string      `json:"exclude_formatters,omitempty"`
-	IncludeExtensions   []string      `json:"include_extensions,omitempty"`
-	ExcludeExtensions   []string      `json:"exclude_extensions,omitempty"`
-	FilePaths           []string      `json:"file_paths,omitempty"`
-	ScanRecent          bool          `json:"scan_recent"`
-	RecentDays          int           `json:"recent_days"`
+	RepoPath            string               `json:"repo_path"`
+	OutputFile          string               `json:"output_file"`
+	OutputFormat        string               `json:"output_format"` // "json", "text"
+	DryRun              bool                 `json:"dry_run"`
+	Verbose             bool                 `json:"verbose"`
+	PreferredFormatters []string             `json:"preferred_formatters,omitempty"`
+	ExcludeFormatters   []string             `json:"exclude_formatters,omitempty"`
+	IncludeExtensions   []string             `json:"include_extensions,omitempty"`
+	ExcludeExtensions   []string             `json:"exclude_extensions,omitempty"`
+	FilePaths           []string             `json:"file_paths,omitempty"`
+	ScanRecent          bool                 `json:"scan_recent"`
+	RecentDays          int                  `json:"recent_days"`
 	FormatOptions       format.FormatOptions `json:"format_options"`
 }
 
 // FormatResult represents the result of the format command
 type FormatResult struct {
-	Success         bool                    `json:"success"`
-	FormatCommand   *format.FormatCommand   `json:"format_command,omitempty"`
-	ErrorMessage    string                  `json:"error_message,omitempty"`
-	Summary         FormatSummary           `json:"summary"`
-	Discovery       *format.FormatterDiscovery `json:"discovery,omitempty"`
+	Success       bool                       `json:"success"`
+	FormatCommand *format.FormatCommand      `json:"format_command,omitempty"`
+	ErrorMessage  string                     `json:"error_message,omitempty"`
+	Summary       FormatSummary              `json:"summary"`
+	Discovery     *format.FormatterDiscovery `json:"discovery,omitempty"`
 }
 
 // FormatSummary provides a summary of the formatting results
@@ -140,7 +140,7 @@ func (f *FormatCommand) Execute() (*FormatResult, error) {
 	result.Summary.FilesFailed = formatCommand.FilesFailed
 
 	if f.options.Verbose {
-		fmt.Printf("Formatted %d files successfully, %d failures\n", 
+		fmt.Printf("Formatted %d files successfully, %d failures\n",
 			formatCommand.FilesFormatted, formatCommand.FilesFailed)
 	}
 
@@ -166,7 +166,7 @@ func (f *FormatCommand) getFilesToFormat() ([]string, error) {
 			if !filepath.IsAbs(filePath) {
 				filePath = filepath.Join(f.options.RepoPath, filePath)
 			}
-			
+
 			// Check if file exists
 			if _, err := os.Stat(filePath); err == nil {
 				files = append(files, filePath)
