@@ -40,7 +40,7 @@ jobs:
             line-length:
               max: 120
             comments: disable
-            comments-indentati"on": disable
+            comments-indentation: disable
             truthy: disable
           EOF
           

@@ -158,7 +158,7 @@ jobs:
               title: `🚀 Prepare release ${newVersion}`,
               head: 'main',
               base: 'develop',
-              body: `## Release Preparati"on": ${newVersion}
+              body: `## Release Preparation: ${newVersion}
             
             This PR tracks the preparation of release ${newVersion}.
             
