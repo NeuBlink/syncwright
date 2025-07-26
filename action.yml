@@ -1,0 +1,218 @@
+name: 'Syncwright'
+description: 'AI-powered Git merge conflict resolution tool'
+author: 'Syncwright Team'
+
+inputs:
+  run_validation:
+    description: 'Whether to run validation checks'
+    required: false
+    default: 'true'
+  max_tokens:
+    description: 'Maximum tokens for AI processing'
+    required: false
+    default: '10000'
+  claude_code_oauth_token:
+    description: 'Claude Code OAuth token for AI-powered operations'
+    required: false
+  merge_failed:
+    description: 'Whether the automatic merge failed'
+    required: false
+    default: 'false'
+  pr_number:
+    description: 'Pull request number'
+    required: false
+  base_branch:
+    description: 'Base branch name'
+    required: false
+  head_branch:
+    description: 'Head branch name'
+    required: false
+
+outputs:
+  conflicts_resolved:
+    description: 'Whether conflicts were resolved'
+    value: ${{ steps.run-syncwright.outputs.conflicts_resolved }}
+  files_modified:
+    description: 'Number of files modified'
+    value: ${{ steps.run-syncwright.outputs.files_modified }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup environment
+      shell: bash
+      run: |
+        echo "Setting up Syncwright environment..."
+        echo "SYNCWRIGHT_VERSION=${SYNCWRIGHT_VERSION:-latest}" >> $GITHUB_ENV
+        echo "SYNCWRIGHT_DEBUG=${SYNCWRIGHT_DEBUG:-false}" >> $GITHUB_ENV
+
+    - name: Install Syncwright binary
+      shell: bash
+      run: |
+        # Run the installation script
+        "${{ github.action_path }}/scripts/install.sh"
+        
+        # Add to PATH for subsequent steps
+        echo "${{ github.workspace }}" >> $GITHUB_PATH
+        
+        # Verify installation
+        ./syncwright --version
+
+    - name: Run Syncwright validation
+      if: inputs.run_validation == 'true'
+      shell: bash
+      run: |
+        echo "Running Syncwright validation..."
+        ./syncwright validate --verbose
+
+    - name: Run Syncwright merge conflict resolution
+      id: run-syncwright
+      shell: bash
+      env:
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude_code_oauth_token }}
+        SYNCWRIGHT_MAX_TOKENS: ${{ inputs.max_tokens }}
+        SYNCWRIGHT_PR_NUMBER: ${{ inputs.pr_number }}
+        SYNCWRIGHT_BASE_BRANCH: ${{ inputs.base_branch }}
+        SYNCWRIGHT_HEAD_BRANCH: ${{ inputs.head_branch }}
+      run: |
+        set -e
+        
+        # Initialize output variables
+        echo "conflicts_resolved=false" >> $GITHUB_OUTPUT
+        echo "files_modified=0" >> $GITHUB_OUTPUT
+        
+        # Check if we need to run AI-powered resolution
+        if [ "${{ inputs.merge_failed }}" = "true" ]; then
+          echo "Merge conflicts detected, running AI-powered resolution..."
+          
+          # Ensure we have the required token for AI operations
+          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "Warning: Claude Code OAuth token not provided. Skipping AI-powered resolution."
+            echo "Please provide claude_code_oauth_token secret for AI-powered conflict resolution."
+            exit 0
+          fi
+          
+          # Run AI-powered conflict resolution
+          echo "Running: ./syncwright resolve --ai --max-tokens=$SYNCWRIGHT_MAX_TOKENS"
+          
+          if ./syncwright resolve --ai --max-tokens="$SYNCWRIGHT_MAX_TOKENS" --verbose; then
+            echo "conflicts_resolved=true" >> $GITHUB_OUTPUT
+            
+            # Count modified files
+            MODIFIED_FILES=$(git diff --name-only | wc -l)
+            echo "files_modified=$MODIFIED_FILES" >> $GITHUB_OUTPUT
+            
+            echo "AI-powered conflict resolution completed successfully"
+            echo "Modified $MODIFIED_FILES files"
+          else
+            echo "AI-powered conflict resolution failed"
+            exit 1
+          fi
+        else
+          echo "No merge conflicts detected or merge was successful"
+          echo "Running standard Syncwright operations..."
+          
+          # Run standard operations (validation, formatting, etc.)
+          ./syncwright format --check
+          
+          if [ "${{ inputs.run_validation }}" = "true" ]; then
+            ./syncwright validate --comprehensive
+          fi
+          
+          echo "Standard Syncwright operations completed"
+        fi
+
+    - name: Commit resolved conflicts
+      if: steps.run-syncwright.outputs.conflicts_resolved == 'true'
+      shell: bash
+      run: |
+        # Check if there are changes to commit
+        if ! git diff --quiet; then
+          echo "Committing resolved conflicts..."
+          
+          # Stage all modified files
+          git add .
+          
+          # Create commit message
+          COMMIT_MSG=$(cat <<'EOF'
+          Resolve merge conflicts using Syncwright AI
+          
+          Automatically resolved conflicts in ${{ steps.run-syncwright.outputs.files_modified }} files using AI-powered analysis for context-aware resolution. Validated resolution using Syncwright validation suite.
+          
+          Co-authored-by: syncwright-bot <syncwright-bot@users.noreply.github.com>
+          EOF
+          )
+          
+          # Commit changes
+          git commit -m "$COMMIT_MSG"
+          
+          # Push changes back to the head branch
+          if [ -n "$SYNCWRIGHT_HEAD_BRANCH" ]; then
+            git push origin HEAD:"$SYNCWRIGHT_HEAD_BRANCH"
+            echo "Pushed resolved conflicts to $SYNCWRIGHT_HEAD_BRANCH"
+          else
+            echo "Warning: Head branch not specified, changes committed locally only"
+          fi
+        else
+          echo "No changes to commit after conflict resolution"
+        fi
+
+    - name: Post-resolution validation
+      if: steps.run-syncwright.outputs.conflicts_resolved == 'true'
+      shell: bash
+      run: |
+        echo "Running post-resolution validation..."
+        
+        # Verify the repository is in a clean state
+        if ! git diff --quiet; then
+          echo "Warning: Repository has uncommitted changes after resolution"
+        fi
+        
+        # Run comprehensive validation
+        ./syncwright validate --post-merge --verbose
+        
+        # Check that all conflicts are resolved
+        if git ls-files -u | grep -q .; then
+          echo "Error: Unresolved conflicts still exist"
+          git ls-files -u
+          exit 1
+        fi
+        
+        echo "Post-resolution validation completed successfully"
+
+    - name: Generate resolution summary
+      if: always()
+      shell: bash
+      run: |
+        echo "=== Syncwright Execution Summary ==="
+        echo "Validation enabled: ${{ inputs.run_validation }}"
+        echo "Max tokens: ${{ inputs.max_tokens }}"
+        echo "Merge failed: ${{ inputs.merge_failed }}"
+        echo "Conflicts resolved: ${{ steps.run-syncwright.outputs.conflicts_resolved }}"
+        echo "Files modified: ${{ steps.run-syncwright.outputs.files_modified }}"
+        echo "=================================="
+        
+        # Save summary to step summary
+        {
+          echo "## Syncwright Execution Summary"
+          echo ""
+          echo "| Setting | Value |"
+          echo "|---------|-------|"
+          echo "| Validation enabled | ${{ inputs.run_validation }} |"
+          echo "| Max tokens | ${{ inputs.max_tokens }} |"
+          echo "| Merge failed | ${{ inputs.merge_failed }} |"
+          echo "| Conflicts resolved | ${{ steps.run-syncwright.outputs.conflicts_resolved }} |"
+          echo "| Files modified | ${{ steps.run-syncwright.outputs.files_modified }} |"
+          echo ""
+          if [ "${{ steps.run-syncwright.outputs.conflicts_resolved }}" = "true" ]; then
+            echo "✅ **Success**: AI-powered conflict resolution completed"
+          elif [ "${{ inputs.merge_failed }}" = "false" ]; then
+            echo "✅ **Success**: No conflicts detected, standard operations completed"
+          else
+            echo "❌ **Failed**: Conflict resolution unsuccessful"
+          fi
+        } >> $GITHUB_STEP_SUMMARY
+
+branding:
+  icon: 'git-merge'
+  color: 'blue'

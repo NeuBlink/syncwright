@@ -1,0 +1,160 @@
+name: Syncwright Reusable Workflow
+
+on:
+  workflow_call:
+    inputs:
+      run_validation:
+        description: 'Whether to run validation checks'
+        required: false
+        type: boolean
+        default: true
+      max_tokens:
+        description: 'Maximum tokens for AI processing'
+        required: false
+        type: number
+        default: 10000
+    secrets:
+      claude_code_oauth_token:
+        description: 'Claude Code OAuth token for AI-powered operations'
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+
+concurrency:
+  group: syncwright-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  syncwright:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Configure git user
+        run: |
+          git config --global user.name "syncwright-bot"
+          git config --global user.email "syncwright-bot@users.noreply.github.com"
+
+      - name: Get PR details
+        id: pr-details
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "base_branch=${{ github.event.pull_request.base.ref }}" >> $GITHUB_OUTPUT
+          echo "head_branch=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
+          echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+
+      - name: Attempt automatic merge
+        id: merge-attempt
+        continue-on-error: true
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Fetch latest changes
+            git fetch origin ${{ steps.pr-details.outputs.base_branch }}
+            git fetch origin ${{ steps.pr-details.outputs.head_branch }}
+            
+            # Switch to base branch and try merge
+            git checkout origin/${{ steps.pr-details.outputs.base_branch }}
+            git checkout -b temp-merge-branch
+            
+            # Attempt merge
+            if git merge origin/${{ steps.pr-details.outputs.head_branch }} --no-edit; then
+              echo "merge_successful=true" >> $GITHUB_OUTPUT
+              echo "Automatic merge successful"
+            else
+              echo "merge_successful=false" >> $GITHUB_OUTPUT
+              echo "Automatic merge failed - conflicts detected"
+              git merge --abort
+            fi
+          else
+            echo "merge_successful=true" >> $GITHUB_OUTPUT
+            echo "Not a PR event, skipping merge attempt"
+          fi
+
+      - name: Run Syncwright
+        uses: ./
+        with:
+          run_validation: ${{ inputs.run_validation }}
+          max_tokens: ${{ inputs.max_tokens }}
+          claude_code_oauth_token: ${{ secrets.claude_code_oauth_token }}
+          merge_failed: ${{ steps.merge-attempt.outputs.merge_successful == 'false' }}
+          pr_number: ${{ steps.pr-details.outputs.pr_number }}
+          base_branch: ${{ steps.pr-details.outputs.base_branch }}
+          head_branch: ${{ steps.pr-details.outputs.head_branch }}
+
+      - name: Update PR status
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ steps.pr-details.outputs.pr_number }}
+            });
+            
+            const mergeSuccessful = '${{ steps.merge-attempt.outputs.merge_successful }}' === 'true';
+            const workflowStatus = '${{ job.status }}';
+            
+            let labels = [];
+            let comment = '';
+            
+            if (mergeSuccessful && workflowStatus === 'success') {
+              labels = ['syncwright:auto-merged'];
+              comment = '✅ **Syncwright**: Automatic merge completed successfully without conflicts.';
+            } else if (!mergeSuccessful) {
+              labels = ['syncwright:conflicts-resolved'];
+              comment = '🔄 **Syncwright**: Conflicts detected and resolved using AI assistance.';
+            } else {
+              labels = ['syncwright:failed'];
+              comment = '❌ **Syncwright**: Workflow failed. Please check the logs for details.';
+            }
+            
+            // Add labels
+            for (const label of labels) {
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: ${{ steps.pr-details.outputs.pr_number }},
+                  labels: [label]
+                });
+              } catch (error) {
+                console.log(`Warning: Could not add label ${label}: ${error.message}`);
+              }
+            }
+            
+            // Post/update sticky comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ steps.pr-details.outputs.pr_number }}
+            });
+            
+            const existingComment = comments.data.find(c => 
+              c.user.login === 'github-actions[bot]' && 
+              c.body.includes('**Syncwright**')
+            );
+            
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: ${{ steps.pr-details.outputs.pr_number }},
+                body: comment
+              });
+            }

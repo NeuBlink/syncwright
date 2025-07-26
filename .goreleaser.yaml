@@ -1,0 +1,196 @@
+# GoReleaser configuration for syncwright
+# https://goreleaser.com/customization/
+
+version: 2
+
+# Project configuration
+project_name: syncwright
+
+# Environment variables to pass to the build
+env:
+  - CGO_ENABLED=0
+
+# Before hooks - run before building
+before:
+  hooks:
+    # Clean up any previous builds
+    - go mod tidy
+    # Run tests to ensure everything is working
+    - go test ./...
+
+# Build configuration
+builds:
+  - id: syncwright
+    # Main package path
+    main: ./cmd/syncwright
+    # Binary name
+    binary: syncwright
+    
+    # Build flags for static linking and optimization
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
+      - -extldflags "-static"
+    
+    # Target platforms and architectures
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    
+    # Ignore unsupported combinations
+    ignore:
+      # Windows ARM64 is not commonly used for CLI tools
+      - goos: windows
+        goarch: arm64
+
+# Archive configuration
+archives:
+  - id: syncwright-archives
+    name_template: "syncwright_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      # Use zip for Windows, tar.gz for others
+      - goos: windows
+        format: zip
+    
+    # Files to include in archives
+    files:
+      - README.md
+      - LICENSE*
+      - CHANGELOG.md
+    
+    # Archive format settings
+    wrap_in_directory: false
+    strip_parent: false
+
+# Checksum configuration
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+# Snapshot configuration for development builds
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+# Changelog configuration
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - "merge conflict"
+      - Merge pull request
+      - Merge remote-tracking branch
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: 'Bug fixes'
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: 'Performance improvements'
+      regexp: "^.*perf[(\\w)]*:+.*$"
+      order: 2
+    - title: Others
+      order: 999
+
+# GitHub release configuration
+release:
+  # Repository to release to
+  github:
+    owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
+    name: "{{ .Env.GITHUB_REPOSITORY_NAME }}"
+  
+  # Release settings
+  draft: false
+  prerelease: auto
+  mode: replace
+  
+  # Header and footer for release notes
+  header: |
+    ## syncwright {{ .Tag }}
+    
+    This release includes binaries for multiple platforms. Download the appropriate binary for your system and verify the checksum.
+    
+    ### Quick Install
+    
+    **Linux/macOS:**
+    ```bash
+    curl -sSL https://raw.githubusercontent.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/{{ .Env.GITHUB_REPOSITORY_NAME }}/main/install.sh | bash
+    ```
+    
+    **Manual Download:**
+    Download the binary for your platform from the assets below.
+
+  footer: |
+    ### Verification
+    
+    Verify your download using the checksums.txt file:
+    ```bash
+    sha256sum -c checksums.txt
+    ```
+    
+    ### Previous Releases
+    
+    See all releases at: https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/{{ .Env.GITHUB_REPOSITORY_NAME }}/releases
+
+# Additional metadata
+metadata:
+  mod_timestamp: "{{ .CommitTimestamp }}"
+          
+# Universal binaries for macOS (combines amd64 and arm64)
+universal_binaries:
+  - id: syncwright-universal
+    name_template: syncwright
+    replace: false
+    
+# Additional validation
+signs:
+  - cmd: true  # Placeholder for future code signing
+
+# Docker configuration (optional, disabled by default)
+dockers:
+  - image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/syncwright:{{ .Version }}-amd64"
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/syncwright:latest-amd64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+    skip_push: true  # Disable Docker by default
+
+# Publication configuration
+publishers:
+  - name: github
+    ids:
+      - syncwright-archives
+    checksum: true
+    signature: false  # Disable signing for now
+    
+# Git configuration
+git:
+  # Ignore dirty state during snapshot builds
+  ignore_tags:
+    - "{{ .Env.SNAPSHOT_TAG }}"
+  
+# Final validation hooks
+after:
+  hooks:
+    - cmd: echo "Release {{ .Version }} completed successfully"
