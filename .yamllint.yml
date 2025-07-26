@@ -1,0 +1,36 @@
+---
+extends: default
+
+rules:
+  # Line length can be longer for workflows
+  line-length:
+    max: 200
+    level: warning
+  
+  # Allow comments to have different indentation
+  comments-indentation: disable
+  
+  # Be more flexible with braces spacing
+  braces:
+    max-spaces-inside: 1
+    level: warning
+  
+  # Allow longer lines in certain contexts
+  indentation:
+    spaces: 2
+    indent-sequences: true
+  
+  # Don't be too strict about trailing spaces
+  trailing-spaces:
+    level: warning
+  
+  # Allow empty values (common in GitHub Actions)
+  empty-values:
+    forbid-in-block-mappings: false
+    forbid-in-flow-mappings: true
+  
+  # Allow key duplicates in some contexts
+  key-duplicates: enable
+  
+  # Allow octal values
+  octal-values: disable
