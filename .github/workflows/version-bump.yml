@@ -1,0 +1,258 @@
+name: Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Type of version bump'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: 'patch'
+      prerelease:
+        description: 'Create prerelease version'
+        required: false
+        type: boolean
+        default: false
+      prerelease_type:
+        description: 'Prerelease type (alpha, beta, rc)'
+        required: false
+        type: choice
+        options:
+          - alpha
+          - beta
+          - rc
+        default: 'alpha'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump-version:
+    name: Bump Version
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+      previous_version: ${{ steps.bump.outputs.previous_version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Git
+        run: |
+          git config --global user.name "syncwright-bot"
+          git config --global user.email "syncwright-bot@users.noreply.github.com"
+
+      - name: Get current version
+        id: current
+        run: |
+          # Try to get the latest tag
+          if git describe --tags --abbrev=0 >/dev/null 2>&1; then
+            CURRENT_VERSION=$(git describe --tags --abbrev=0)
+          else
+            # No tags exist, start with v0.0.0
+            CURRENT_VERSION="v0.0.0"
+          fi
+          
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $CURRENT_VERSION"
+
+      - name: Calculate new version
+        id: bump
+        run: |
+          CURRENT="${{ steps.current.outputs.current_version }}"
+          VERSION_TYPE="${{ github.event.inputs.version_type }}"
+          IS_PRERELEASE="${{ github.event.inputs.prerelease }}"
+          PRERELEASE_TYPE="${{ github.event.inputs.prerelease_type }}"
+          
+          # Remove 'v' prefix for calculation
+          CURRENT_CLEAN=$(echo "$CURRENT" | sed 's/^v//')
+          
+          # Split version into parts
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_CLEAN"
+          
+          # Remove any prerelease/build metadata from patch
+          PATCH=$(echo "$PATCH" | sed 's/[-+].*//')
+          
+          # Bump version based on type
+          case "$VERSION_TYPE" in
+            "major")
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            "minor")
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            "patch")
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+          
+          # Construct new version
+          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          
+          # Add prerelease suffix if requested
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            NEW_VERSION="${NEW_VERSION}-${PRERELEASE_TYPE}.1"
+          fi
+          
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "previous_version=$CURRENT" >> $GITHUB_OUTPUT
+          
+          echo "Previous version: $CURRENT"
+          echo "New version: $NEW_VERSION"
+
+      - name: Update version in files
+        run: |
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+          
+          # Update any version files if they exist
+          # This is where you'd update version.go, package.json, etc.
+          
+          echo "Version bump to $NEW_VERSION ready for commit"
+
+      - name: Create version bump commit
+        run: |
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+          
+          # Commit version changes if any files were modified
+          if ! git diff --quiet; then
+            git add .
+            git commit -m "chore: bump version to $NEW_VERSION"
+          fi
+
+      - name: Create and push tag
+        run: |
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+          
+          # Create annotated tag
+          git tag -a "$NEW_VERSION" -m "Release $NEW_VERSION"
+          
+          # Push changes and tag
+          git push origin main
+          git push origin "$NEW_VERSION"
+          
+          echo "Created and pushed tag: $NEW_VERSION"
+
+      - name: Create release PR (for prerelease)
+        if: github.event.inputs.prerelease == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const newVersion = '${{ steps.bump.outputs.new_version }}';
+            const previousVersion = '${{ steps.bump.outputs.previous_version }}';
+            
+            // Create a PR for prerelease to track changes
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚀 Prepare release ${newVersion}`,
+              head: 'main',
+              base: 'develop',
+              body: `## Release Preparation: ${newVersion}
+            
+            This PR tracks the preparation of release ${newVersion}.
+            
+            ### Changes since ${previousVersion}
+            
+            - Version bumped from ${previousVersion} to ${newVersion}
+            
+            ### Pre-release Checklist
+            
+            - [ ] All tests passing
+            - [ ] Documentation updated
+            - [ ] Changelog reviewed
+            - [ ] Security review completed
+            - [ ] Performance benchmarks acceptable
+            
+            ### Release Notes
+            
+            <!-- Add release notes here -->
+            
+            ---
+            
+            This is a **${newVersion.includes('alpha') ? 'alpha' : newVersion.includes('beta') ? 'beta' : 'release candidate'}** version.
+            `,
+              draft: true
+            });
+            
+            console.log(\`Created release preparation PR #\${pr.number}\`);
+
+  trigger-release:
+    name: Trigger Release
+    runs-on: ubuntu-latest
+    needs: bump-version
+    if: github.event.inputs.prerelease != 'true'
+    steps:
+      - name: Trigger release workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const newVersion = '${{ needs.bump-version.outputs.new_version }}';
+            
+            // The release workflow will be triggered automatically by the tag push
+            console.log(`Release workflow will be triggered by tag: ${newVersion}`);
+            
+            // Optionally, you can also trigger it manually
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'release.yml',
+              ref: 'main',
+              inputs: {
+                version: newVersion,
+                draft: 'false',
+                prerelease: 'false'
+              }
+            });
+
+  summary:
+    name: Version Bump Summary
+    runs-on: ubuntu-latest
+    needs: [bump-version, trigger-release]
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 🏷️ Version Bump Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Previous Version | ${{ needs.bump-version.outputs.previous_version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| New Version | ${{ needs.bump-version.outputs.new_version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version Type | ${{ github.event.inputs.version_type }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Is Prerelease | ${{ github.event.inputs.prerelease }} |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then
+            echo "| Prerelease Type | ${{ github.event.inputs.prerelease_type }} |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🔬 **Prerelease created** - A draft PR has been created for release preparation." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🚀 **Release triggered** - The release workflow has been initiated." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then
+            echo "1. Review the draft release preparation PR" >> $GITHUB_STEP_SUMMARY
+            echo "2. Complete the pre-release checklist" >> $GITHUB_STEP_SUMMARY
+            echo "3. Test the prerelease thoroughly" >> $GITHUB_STEP_SUMMARY
+            echo "4. When ready, create a stable release using this workflow" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "1. Monitor the release workflow progress" >> $GITHUB_STEP_SUMMARY
+            echo "2. Verify the GitHub release was created successfully" >> $GITHUB_STEP_SUMMARY
+            echo "3. Check that the action was published to the marketplace" >> $GITHUB_STEP_SUMMARY
+            echo "4. Update any dependent repositories or documentation" >> $GITHUB_STEP_SUMMARY
+          fi
