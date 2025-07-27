@@ -34,6 +34,9 @@ type DetectOptions struct {
 	MetricsFile     string
 	// Timeout support for long-running operations
 	TimeoutSeconds  int
+	// Retry mechanism for failed operations
+	MaxRetries      int
+	RetryDelay      time.Duration
 	// Enhanced logging options
 	EnableDetailed  bool
 	LogFile         string

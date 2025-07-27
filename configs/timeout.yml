@@ -1,0 +1,35 @@
+# Syncwright Timeout and Retry Configuration
+# Alternative configuration approach for operation timeouts
+
+timeout:
+  # Global timeout settings (in seconds)
+  default_operation: 300
+  detection_scan: 180
+  ai_processing: 600
+  validation: 120
+  
+  # Per-file type timeouts
+  file_types:
+    go: 45
+    javascript: 30
+    python: 35
+    yaml: 20
+    markdown: 15
+    
+retry:
+  # Retry behavior configuration
+  max_attempts: 3
+  base_delay_ms: 1000
+  max_delay_ms: 10000
+  exponential_backoff: true
+  
+  # Retry conditions
+  on_timeout: true
+  on_network_error: true
+  on_rate_limit: true
+  
+# Monitoring and alerting thresholds
+monitoring:
+  slow_operation_threshold: 60
+  failure_rate_threshold: 0.1
+  alert_on_timeout: true

@@ -50,6 +50,14 @@ inputs:
   head_branch:
     description: 'Source branch name containing changes to be merged'
     required: false
+  timeout_seconds:
+    description: 'Maximum execution time in seconds (default: 300, set to 0 for no timeout)'
+    required: false
+    default: '300'
+  max_retries:
+    description: 'Maximum number of retry attempts for failed operations (default: 3)'
+    required: false
+    default: '3'
 
 outputs:
   conflicts_resolved:
