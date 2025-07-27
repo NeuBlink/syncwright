@@ -177,7 +177,10 @@ runs:
           export GITHUB_WORKSPACE="${WORKSPACE_PATH}"
           export GITHUB_ACTION_PATH="${ACTION_PATH}"
           
-          if [ -f "$INSTALL_SCRIPT" ] && (timeout 15s "$INSTALL_SCRIPT" 2>/dev/null || (command -v gtimeout >/dev/null 2>&1 && gtimeout 15s "$INSTALL_SCRIPT" 2>/dev/null)); then
+          if [ -f "$INSTALL_SCRIPT" ] && \
+             (timeout 15s "$INSTALL_SCRIPT" 2>/dev/null || \
+              (command -v gtimeout >/dev/null 2>&1 && \
+               gtimeout 15s "$INSTALL_SCRIPT" 2>/dev/null)); then
             echo "Installation script succeeded"
           else
             echo "Installation script failed, creating basic stub..."
