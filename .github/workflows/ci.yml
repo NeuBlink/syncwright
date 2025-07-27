@@ -255,7 +255,7 @@ jobs:
       - name: Test format command
         run: |
           cd test-repo
-          ../bin/syncwright format --check || echo "Format command completed"
+          ../bin/syncwright format --dry-run || echo "Format command completed"
 
       - name: Test version command
         run: |

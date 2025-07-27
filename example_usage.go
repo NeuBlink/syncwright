@@ -127,7 +127,9 @@ func runAIApplyExample() {
 	}
 
 	// Clean up
-	os.Remove(payloadFile)
+	if err := os.Remove(payloadFile); err != nil {
+		fmt.Printf("Warning: failed to remove temporary file %s: %v\n", payloadFile, err)
+	}
 }
 
 // runManualTest demonstrates manual testing of git utilities

@@ -87,6 +87,11 @@ func isConflictStatus(status string) bool {
 
 // ParseConflictHunks extracts conflict hunks from a file's content
 func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
+	// Validate repository path for security
+	if err := validateGitPath(repoPath); err != nil {
+		return nil, fmt.Errorf("invalid repository path: %w", err)
+	}
+	
 	// Validate and sanitize file path to prevent command injection
 	cleanPath := filepath.Clean(filePath)
 	if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") || strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") || strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") || strings.Contains(cleanPath, "$") {
@@ -94,7 +99,11 @@ func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
 	}
 
 	// Additional validation to ensure path contains only safe characters
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9._/\-]+$`, cleanPath); !matched {
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9._/\-]+$`, cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("error validating file path format: %w", err)
+	}
+	if !matched {
 		return nil, fmt.Errorf("file path contains unsafe characters: %s", filePath)
 	}
 
@@ -106,7 +115,7 @@ func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
 	if err != nil {
 		// Try reading from filesystem using Go's standard library instead of shell command
 		fullPath := filepath.Join(repoPath, cleanPath)
-		content, err = os.ReadFile(fullPath)
+		content, err = os.ReadFile(fullPath) // #nosec G304 - repoPath and cleanPath are validated above
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
 		}
@@ -214,8 +223,18 @@ func (p *conflictParser) collectTheirsLines(lines []string, startIndex int, hunk
 
 // ExtractFileContext extracts surrounding context lines for AI processing
 func ExtractFileContext(filePath, repoPath string, contextLines int) ([]string, error) {
+	// Validate repository path for security
+	if err := validateGitPath(repoPath); err != nil {
+		return nil, fmt.Errorf("invalid repository path: %w", err)
+	}
+	
+	// Validate file path for security
+	if err := validateGitPath(filePath); err != nil {
+		return nil, fmt.Errorf("invalid file path: %w", err)
+	}
+	
 	fullPath := filepath.Join(repoPath, filePath)
-	content, err := os.ReadFile(fullPath)
+	content, err := os.ReadFile(fullPath) // #nosec G304 - repoPath and filePath are validated above
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
 	}

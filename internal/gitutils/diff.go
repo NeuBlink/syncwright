@@ -32,8 +32,27 @@ func GetConflictDiff(repoPath string, filePaths []string) ([]DiffFile, error) {
 		return nil, nil
 	}
 
-	args := append([]string{"diff", "--no-index", "--no-prefix"}, filePaths...)
-	cmd := exec.Command("git", args...)
+	// Validate all file paths to prevent command injection
+	for _, filePath := range filePaths {
+		cleanPath := filepath.Clean(filePath)
+		if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") || strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") || strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") || strings.Contains(cleanPath, "$") {
+			return nil, fmt.Errorf("invalid file path: %s", filePath)
+		}
+		// Additional validation to ensure path contains only safe characters
+		matched, err := regexp.MatchString(`^[a-zA-Z0-9._/\-]+$`, cleanPath)
+		if err != nil {
+			return nil, fmt.Errorf("error validating file path format: %w", err)
+		}
+		if !matched {
+			return nil, fmt.Errorf("file path contains unsafe characters: %s", filePath)
+		}
+	}
+
+	// Build command args safely after validation
+	cmdArgs := make([]string, 0, len(filePaths)+3)
+	cmdArgs = append(cmdArgs, "diff", "--no-index", "--no-prefix")
+	cmdArgs = append(cmdArgs, filePaths...)
+	cmd := exec.Command("git", cmdArgs...) // #nosec G204 - filePaths are validated above
 	cmd.Dir = repoPath
 
 	output, err := cmd.Output()
@@ -58,8 +77,31 @@ func GetMergeBaseDiff(repoPath, filePath string) (*DiffFile, error) {
 
 	base := strings.TrimSpace(string(baseOutput))
 
+	// Validate base commit hash to prevent command injection
+	matched, err := regexp.MatchString(`^[a-fA-F0-9]{4,}$`, base)
+	if err != nil {
+		return nil, fmt.Errorf("error validating base commit hash: %w", err)
+	}
+	if !matched {
+		return nil, fmt.Errorf("invalid base commit hash format: %s", base)
+	}
+
+	// Validate and sanitize file path to prevent command injection
+	cleanPath := filepath.Clean(filePath)
+	if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") || strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") || strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") || strings.Contains(cleanPath, "$") {
+		return nil, fmt.Errorf("invalid file path: %s", filePath)
+	}
+	// Additional validation to ensure path contains only safe characters
+	matched, err = regexp.MatchString(`^[a-zA-Z0-9._/\-]+$`, cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("error validating file path format: %w", err)
+	}
+	if !matched {
+		return nil, fmt.Errorf("file path contains unsafe characters: %s", filePath)
+	}
+
 	// Get diff from base to working tree
-	cmd = exec.Command("git", "diff", "--no-prefix", base, "--", filePath)
+	cmd = exec.Command("git", "diff", "--no-prefix", base, "--", cleanPath) // #nosec G204 - base and cleanPath are validated above
 	cmd.Dir = repoPath
 
 	output, err := cmd.Output()
@@ -240,7 +282,11 @@ func finalizeCurrentItems(currentFile *DiffFile, currentHunk *DiffHunk, files *[
 // GetFileAtRevision retrieves file content at a specific git revision
 func GetFileAtRevision(repoPath, filePath, revision string) ([]string, error) {
 	// Validate revision parameter to prevent command injection
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_\-]+$`, revision); !matched {
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9_\-]+$`, revision)
+	if err != nil {
+		return nil, fmt.Errorf("error validating revision format: %w", err)
+	}
+	if !matched {
 		return nil, fmt.Errorf("invalid revision format: %s", revision)
 	}
 
@@ -251,7 +297,11 @@ func GetFileAtRevision(repoPath, filePath, revision string) ([]string, error) {
 	}
 
 	// Additional validation to ensure path contains only safe characters
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9._/\-]+$`, cleanPath); !matched {
+	matched, err = regexp.MatchString(`^[a-zA-Z0-9._/\-]+$`, cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("error validating file path format: %w", err)
+	}
+	if !matched {
 		return nil, fmt.Errorf("file path contains unsafe characters: %s", filePath)
 	}
 

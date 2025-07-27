@@ -31,7 +31,14 @@ func buildVersionString() string {
 	if commit == "none" || date == "unknown" {
 		return version
 	}
-	return fmt.Sprintf("%s (commit: %s, built: %s, by: %s)", version, commit[:8], date, builtBy)
+	
+	// Safely truncate commit hash to at most 8 characters
+	commitDisplay := commit
+	if len(commit) > 8 {
+		commitDisplay = commit[:8]
+	}
+	
+	return fmt.Sprintf("%s (commit: %s, built: %s, by: %s)", version, commitDisplay, date, builtBy)
 }
 
 func newRootCmd() *cobra.Command {
@@ -57,39 +64,32 @@ through a pipeline of JSON-based operations that can be automated or AI-assisted
 	return cmd
 }
 
-// DetectResult represents the output of the detect command
-type DetectResult struct {
-	Conflicts []ConflictInfo `json:"conflicts"`
-	Timestamp string         `json:"timestamp"`
-}
-
-type ConflictInfo struct {
-	File       string   `json:"file"`
-	LineStart  int      `json:"line_start"`
-	LineEnd    int      `json:"line_end"`
-	ConflictID string   `json:"conflict_id"`
-	Markers    []string `json:"markers"`
-}
 
 func newDetectCmd() *cobra.Command {
 	var outputFile string
+	var outputFormat string
+	var verbose bool
 
 	cmd := &cobra.Command{
 		Use:   "detect",
 		Short: "Detect merge conflicts in the current repository",
 		Long:  "Scans the repository for merge conflicts and outputs a JSON report of findings.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement conflict detection logic
-			result := DetectResult{
-				Conflicts: []ConflictInfo{},
-				Timestamp: "placeholder",
+			options := commands.DetectOptions{
+				OutputFile:   outputFile,
+				OutputFormat: outputFormat,
+				Verbose:      verbose,
 			}
 
-			return iojson.WriteOutput(outputFile, result)
+			detectCmd := commands.NewDetectCommand(options)
+			_, err := detectCmd.Execute()
+			return err
 		},
 	}
 
 	cmd.Flags().StringVarP(&outputFile, "out", "o", "", "Output file for conflicts JSON (default: stdout)")
+	cmd.Flags().StringVar(&outputFormat, "format", "json", "Output format: json, text")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 
 	return cmd
 }
@@ -119,7 +119,7 @@ func newPayloadCmd() *cobra.Command {
 		Short: "Generate AI-ready payloads from conflict data",
 		Long:  "Transforms conflict detection results into structured payloads suitable for AI processing.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var input DetectResult
+			var input commands.DetectResult
 			if err := iojson.ReadInput(inputFile, &input); err != nil {
 				return fmt.Errorf("failed to read input: %w", err)
 			}

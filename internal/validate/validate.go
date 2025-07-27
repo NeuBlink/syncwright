@@ -849,7 +849,12 @@ func executeCommand(cmd ValidationCommand, timeoutSeconds int) CommandResult {
 	defer cancel()
 
 	// Validate command to prevent command injection
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_\-]+$`, cmd.Command); !matched {
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9_\-]+$`, cmd.Command)
+	if err != nil {
+		result.Error = fmt.Sprintf("Error validating command format: %v", err)
+		return result
+	}
+	if !matched {
 		result.Error = fmt.Sprintf("Invalid command format: %s", cmd.Command)
 		return result
 	}
@@ -869,7 +874,7 @@ func executeCommand(cmd ValidationCommand, timeoutSeconds int) CommandResult {
 	startTime := time.Now()
 
 	// Execute command
-	err := execCmd.Run()
+	err = execCmd.Run()
 	result.Duration = time.Since(startTime)
 	result.Stdout = stdout.String()
 	result.Stderr = stderr.String()

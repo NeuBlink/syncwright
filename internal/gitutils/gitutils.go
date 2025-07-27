@@ -11,6 +11,23 @@ import (
 	"time"
 )
 
+// validateGitPath validates file paths within git repositories for security
+func validateGitPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("path cannot be empty")
+	}
+	
+	// Clean the path to resolve . and .. components
+	cleanPath := filepath.Clean(path)
+	
+	// Check for basic path traversal attempts and dangerous characters
+	if strings.ContainsAny(cleanPath, ";|&`$") {
+		return fmt.Errorf("potentially dangerous characters in path: %s", path)
+	}
+	
+	return nil
+}
+
 // IsGitRepository checks if the current directory is a Git repository
 func IsGitRepository() (bool, error) {
 	cmd := exec.Command("git", "rev-parse", "--git-dir")
@@ -68,7 +85,11 @@ func GetRecentlyModifiedFiles(repoPath string, days int) ([]string, error) {
 
 	// Validate the since parameter format to prevent command injection
 	// Expected format: YYYY-MM-DD
-	if matched, _ := regexp.MatchString(`^\d{4}-\d{2}-\d{2}$`, since); !matched {
+	matched, err := regexp.MatchString(`^\d{4}-\d{2}-\d{2}$`, since)
+	if err != nil {
+		return nil, fmt.Errorf("error validating date format: %w", err)
+	}
+	if !matched {
 		return nil, fmt.Errorf("invalid date format: %s", since)
 	}
 

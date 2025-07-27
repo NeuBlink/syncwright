@@ -98,6 +98,13 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 	if !inMerge {
 		result.ErrorMessage = "Repository is not in a merge state - no conflicts to detect"
 		result.Success = true // This is not an error, just no conflicts
+		
+		// Output results even when no conflicts
+		if err := d.outputResults(result); err != nil {
+			result.ErrorMessage = fmt.Sprintf("Failed to output results: %v", err)
+			return result, err
+		}
+		
 		return result, nil
 	}
 

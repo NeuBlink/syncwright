@@ -1,6 +1,9 @@
 # golangci-lint configuration for Syncwright
 # See https://golangci-lint.run/usage/configuration/
 
+# Configuration version
+version: 2
+
 run:
   timeout: 5m
   issues-exit-code: 1
@@ -14,18 +17,6 @@ output:
   uniq-by-line: true
 
 linters-settings:
-  # Gofmt settings
-  gofmt:
-    simplify: true
-
-  # Goimports settings
-  goimports:
-    local-prefixes: syncwright
-
-  # Golint settings
-  golint:
-    min-confidence: 0
-
   # Govet settings
   govet:
     check-shadowing: true
@@ -91,14 +82,10 @@ linters:
   # Enable specific linters
   enable:
     - errcheck      # Check for unchecked errors
-    - gosimple      # Simplify code
     - govet         # Vet examines Go source code
     - ineffassign   # Detect ineffectual assignments
     - staticcheck   # Static analysis
-    - typecheck     # Type checking
     - unused        # Check for unused code
-    - gofmt         # Check formatting
-    - goimports     # Check imports
     - misspell      # Check for misspellings
     - goconst       # Check for repeated strings
     - gosec         # Security analysis

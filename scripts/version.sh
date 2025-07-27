@@ -61,8 +61,10 @@ compare_versions() {
     local version2="$2"
     
     # Remove 'v' prefix and any prerelease/build metadata
-    local clean1=$(echo "$version1" | sed 's/^v//' | sed 's/[-+].*//')
-    local clean2=$(echo "$version2" | sed 's/^v//' | sed 's/[-+].*//')
+    local clean1
+    local clean2
+    clean1=$(echo "$version1" | sed 's/^v//' | sed 's/[-+].*//')
+    clean2=$(echo "$version2" | sed 's/^v//' | sed 's/[-+].*//')
     
     # Use sort -V for version comparison
     if [[ "$clean1" == "$clean2" ]]; then
@@ -88,7 +90,8 @@ get_next_version() {
     local prerelease_type="${4:-alpha}"
     
     # Remove 'v' prefix and any existing prerelease/build metadata
-    local clean_version=$(echo "$current_version" | sed 's/^v//' | sed 's/[-+].*//')
+    local clean_version
+    clean_version=$(echo "$current_version" | sed 's/^v//' | sed 's/[-+].*//')
     
     # Split version into parts
     IFS='.' read -r major minor patch <<< "$clean_version"

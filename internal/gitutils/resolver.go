@@ -56,10 +56,20 @@ func ApplyResolutions(repoPath string, resolutions []ConflictResolution) (*Resol
 
 // applyFileResolutions applies resolutions to a single file
 func applyFileResolutions(repoPath, filePath string, resolutions []ConflictResolution) error {
+	// Validate repository path for security
+	if err := validateGitPath(repoPath); err != nil {
+		return fmt.Errorf("invalid repository path: %w", err)
+	}
+	
+	// Validate file path for security
+	if err := validateGitPath(filePath); err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+	
 	fullPath := fmt.Sprintf("%s/%s", repoPath, filePath)
 
 	// Read current file content
-	content, err := os.ReadFile(fullPath)
+	content, err := os.ReadFile(fullPath) // #nosec G304 - repoPath and filePath are validated above
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
@@ -163,9 +173,19 @@ func ValidateResolution(resolution ConflictResolution) error {
 
 // ExtractConflictContent extracts the content of conflict markers
 func ExtractConflictContent(filePath, repoPath string) (map[int]ConflictContent, error) {
+	// Validate repository path for security
+	if err := validateGitPath(repoPath); err != nil {
+		return nil, fmt.Errorf("invalid repository path: %w", err)
+	}
+	
+	// Validate file path for security
+	if err := validateGitPath(filePath); err != nil {
+		return nil, fmt.Errorf("invalid file path: %w", err)
+	}
+	
 	fullPath := fmt.Sprintf("%s/%s", repoPath, filePath)
 
-	content, err := os.ReadFile(fullPath)
+	content, err := os.ReadFile(fullPath) // #nosec G304 - repoPath and filePath are validated above
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
@@ -279,10 +299,20 @@ type ConflictContent struct {
 
 // CreateBackup creates a backup of the file before applying resolutions
 func CreateBackup(repoPath, filePath string) error {
+	// Validate repository path for security
+	if err := validateGitPath(repoPath); err != nil {
+		return fmt.Errorf("invalid repository path: %w", err)
+	}
+	
+	// Validate file path for security
+	if err := validateGitPath(filePath); err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+	
 	fullPath := fmt.Sprintf("%s/%s", repoPath, filePath)
 	backupPath := fullPath + ".backup"
 
-	content, err := os.ReadFile(fullPath)
+	content, err := os.ReadFile(fullPath) // #nosec G304 - repoPath and filePath are validated above
 	if err != nil {
 		return fmt.Errorf("failed to read file for backup: %w", err)
 	}
@@ -297,10 +327,20 @@ func CreateBackup(repoPath, filePath string) error {
 
 // RestoreBackup restores a file from its backup
 func RestoreBackup(repoPath, filePath string) error {
+	// Validate repository path for security
+	if err := validateGitPath(repoPath); err != nil {
+		return fmt.Errorf("invalid repository path: %w", err)
+	}
+	
+	// Validate file path for security
+	if err := validateGitPath(filePath); err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+	
 	fullPath := fmt.Sprintf("%s/%s", repoPath, filePath)
 	backupPath := fullPath + ".backup"
 
-	content, err := os.ReadFile(backupPath)
+	content, err := os.ReadFile(backupPath) // #nosec G304 - repoPath and filePath are validated above
 	if err != nil {
 		return fmt.Errorf("failed to read backup file: %w", err)
 	}

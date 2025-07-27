@@ -34,22 +34,11 @@ jobs:
         run: |
           echo "Validating GitHub Actions workflow files..."
 
-          # Create a simple yamllint config that focuses on syntax errors only
-          cat > .yamllint.yml << 'EOF'
-          extends: default
-          rules:
-            line-length: disable
-            comments: disable
-            comments-indentation: disable
-            truthy: disable
-            trailing-spaces: disable
-            new-line-at-end-of-file: disable
-            document-start: disable
-            empty-lines: disable
-            brackets: disable
-            braces: disable
-            indentation: disable
-          EOF
+          # Use existing .yamllint.yml from repository root
+          if [ ! -f .yamllint.yml ]; then
+            echo "Error: .yamllint.yml not found in repository root"
+            exit 1
+          fi
 
           # Validate all YAML files
           find .github/workflows -name "*.yml" -o -name "*.yaml" | while read -r workflow; do

@@ -1,6 +1,7 @@
 extends: default
 rules:
-  line-length: disable
+  line-length:
+    max: 200  # Set a more reasonable limit instead of disable
   comments: disable
   comments-indentation: disable
   truthy: disable
