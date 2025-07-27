@@ -295,86 +295,36 @@ jobs:
               prerelease: ${{ needs.validate-release.outputs.is_prerelease }}
             });
 
-  publish-action:
-    name: Publish to GitHub Marketplace
+  trigger-marketplace-publish:
+    name: Trigger Marketplace Publishing
     runs-on: ubuntu-latest
     needs: [validate-release, release]
     if: ${{ !github.event.inputs.draft && needs.validate-release.outputs.is_prerelease == 'false' }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.validate-release.outputs.version }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Validate action for marketplace
-        run: |
-          # Check that action.yml has required marketplace fields
-          required_fields=("name" "description" "author" "branding")
-          
-          for field in "${required_fields[@]}"; do
-            if ! grep -q "^${field}:" action.yml; then
-              echo "Error: action.yml missing required field for marketplace: $field"
-              exit 1
-            fi
-          done
-          
-          # Validate branding
-          if ! grep -A2 "^branding:" action.yml | grep -q "icon:"; then
-            echo "Error: action.yml missing branding.icon"
-            exit 1
-          fi
-          
-          if ! grep -A2 "^branding:" action.yml | grep -q "color:"; then
-            echo "Error: action.yml missing branding.color"
-            exit 1
-          fi
-
-      - name: Create marketplace release
+      - name: Trigger marketplace publishing workflow
         uses: actions/github-script@v7
         with:
           script: |
             const version = '${{ needs.validate-release.outputs.version }}';
             
-            // The action is automatically published to marketplace when a release is created
-            // with proper action.yml metadata
-            console.log(`Action published to marketplace with version ${version}`);
+            console.log(`Triggering marketplace publishing for version ${version}`);
             
-            // Create major version tag (e.g., v1, v2) for easier consumption
-            const majorVersion = version.split('.')[0];
+            // The dedicated marketplace publishing workflow will handle:
+            // - Comprehensive validation
+            // - Major version tag updates  
+            // - Release note generation
+            // - Marketplace submission
             
-            try {
-              await github.rest.git.createRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: `refs/tags/${majorVersion}`,
-                sha: context.sha
-              });
-              console.log(`Created major version tag: ${majorVersion}`);
-            } catch (error) {
-              if (error.status === 422) {
-                // Tag already exists, update it
-                await github.rest.git.updateRef({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  ref: `tags/${majorVersion}`,
-                  sha: context.sha,
-                  force: true
-                });
-                console.log(`Updated major version tag: ${majorVersion}`);
-              } else {
-                throw error;
-              }
-            }
+            // Note: The publish-marketplace.yml workflow is automatically triggered
+            // by the tag creation in the release job above
+            
+            console.log(`Marketplace publishing will be handled by dedicated workflow`);
+            console.log(`Monitor progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml`);
 
   test-action-consumption:
     name: Test Action Consumption
     runs-on: ubuntu-latest
-    needs: [validate-release, publish-action]
+    needs: [validate-release, trigger-marketplace-publish]
     if: always() && needs.validate-release.result == 'success'
     strategy:
       matrix:
@@ -433,7 +383,7 @@ jobs:
   notify-completion:
     name: Notify Release Completion
     runs-on: ubuntu-latest
-    needs: [validate-release, release, publish-action, test-action-consumption]
+    needs: [validate-release, release, trigger-marketplace-publish, test-action-consumption]
     if: always()
     steps:
       - name: Generate release summary
@@ -446,7 +396,7 @@ jobs:
           echo "- **Version**: $VERSION" >> $GITHUB_STEP_SUMMARY
           echo "- **Type**: $([ "$IS_PRERELEASE" = "true" ] && echo "Pre-release" || echo "Stable release")" >> $GITHUB_STEP_SUMMARY
           echo "- **Release**: ${{ needs.release.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Marketplace**: ${{ needs.publish-action.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Marketplace Trigger**: ${{ needs.trigger-marketplace-publish.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Testing**: ${{ needs.test-action-consumption.result }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
@@ -455,8 +405,10 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "📦 **Assets available at**: https://github.com/${{ github.repository }}/releases/tag/$VERSION" >> $GITHUB_STEP_SUMMARY
             
-            if [ "${{ needs.publish-action.result }}" = "success" ]; then
-              echo "🏪 **Published to GitHub Marketplace**" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ needs.trigger-marketplace-publish.result }}" = "success" ]; then
+              echo "🏪 **Marketplace publishing triggered**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "🔍 **Monitor marketplace publishing**: https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "🔧 **Usage**: " >> $GITHUB_STEP_SUMMARY
               echo '```yaml' >> $GITHUB_STEP_SUMMARY

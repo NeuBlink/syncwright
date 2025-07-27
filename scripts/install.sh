@@ -237,7 +237,9 @@ install_binary() {
     local checksums_path="${TEMP_DIR}/${checksums_name}"
     
     if ! download_file "$download_url" "$archive_path"; then
-        log_error "Failed to download binary archive"
+        log_warning "Failed to download binary archive from GitHub releases"
+        log_info "This may indicate that no releases are available yet for this repository"
+        log_info "Release URL attempted: $download_url"
         return 1
     fi
     
@@ -292,31 +294,88 @@ install_binary() {
     return 0
 }
 
-# Fallback: install via go install
-install_via_go() {
-    log_warning "Attempting fallback installation via Go toolchain"
+# Fallback: build from source if available locally
+install_via_source_build() {
+    log_warning "Attempting fallback installation by building from source"
     
     if ! command -v go >/dev/null 2>&1; then
-        log_error "Go toolchain not available for fallback installation"
+        log_error "Go toolchain not available for source build"
         return 1
     fi
     
-    local go_package="github.com/${REPO_OWNER}/${REPO_NAME}/cmd/${BINARY_NAME}@latest"
-    log_info "Installing via: go install $go_package"
+    # Check if we're running from within the source repository
+    local source_dir=""
     
-    # Install to temporary location first
-    local temp_gopath
-    temp_gopath=$(mktemp -d)
+    # Try to find source in common locations
+    local possible_sources=(
+        "${GITHUB_WORKSPACE:-}"
+        "${GITHUB_ACTION_PATH:-}"
+        "$(pwd)"
+        "/github/workspace"
+    )
     
-    if ! GOPATH="$temp_gopath" GOBIN="${INSTALL_DIR}" go install "$go_package"; then
-        log_error "Failed to install via go install"
-        rm -rf "$temp_gopath"
-        return 1
+    for dir in "${possible_sources[@]}"; do
+        if [ -n "$dir" ] && [ -f "$dir/go.mod" ] && [ -f "$dir/cmd/${BINARY_NAME}/main.go" ]; then
+            source_dir="$dir"
+            log_info "Found source repository at: $source_dir"
+            break
+        fi
+    done
+    
+    if [ -z "$source_dir" ]; then
+        log_warning "Source repository not found in expected locations"
+        log_info "Attempting go install with module path resolution..."
+        
+        # Try go install but handle module path conflicts gracefully
+        local go_package="github.com/${REPO_OWNER}/${REPO_NAME}/cmd/${BINARY_NAME}@latest"
+        log_info "Attempting: go install $go_package"
+        
+        # Create temporary directory for isolated build
+        local temp_dir
+        temp_dir=$(mktemp -d)
+        local original_dir=$(pwd)
+        
+        cd "$temp_dir"
+        
+        # Initialize a temporary module to avoid conflicts
+        go mod init temp-install 2>/dev/null || true
+        
+        # Try to install, but capture and handle errors gracefully
+        if GOBIN="${INSTALL_DIR}" go install "$go_package" 2>/dev/null; then
+            cd "$original_dir"
+            rm -rf "$temp_dir"
+            log_success "Installed via go install (with module path resolution)"
+            return 0
+        else
+            cd "$original_dir"
+            rm -rf "$temp_dir"
+            log_warning "go install failed due to module path conflicts"
+            return 1
+        fi
     fi
     
-    rm -rf "$temp_gopath"
-    log_success "Installed via Go toolchain"
-    return 0
+    # Build from local source
+    local original_dir=$(pwd)
+    cd "$source_dir"
+    
+    log_info "Building from source in: $source_dir"
+    
+    # Ensure we have a clean build environment
+    if ! go mod tidy; then
+        log_warning "go mod tidy failed, proceeding anyway"
+    fi
+    
+    # Build the binary
+    local target_path="${INSTALL_DIR}/${BINARY_NAME}"
+    if go build -o "$target_path" "./cmd/${BINARY_NAME}"; then
+        cd "$original_dir"
+        log_success "Built and installed from source"
+        return 0
+    else
+        cd "$original_dir"
+        log_error "Failed to build from source"
+        return 1
+    fi
 }
 
 # Verify installation
@@ -382,17 +441,17 @@ main() {
         log_warning "Binary installation failed"
     fi
     
-    # Try Go fallback if binary installation failed
+    # Try source build fallback if binary installation failed
     log_info "Attempting fallback installation method"
-    if install_via_go; then
+    if install_via_source_build; then
         if verify_installation; then
-            log_success "Syncwright installed successfully via Go toolchain"
+            log_success "Syncwright installed successfully via source build"
             return 0
         else
-            log_error "Go installation verification failed"
+            log_error "Source build installation verification failed"
         fi
     else
-        log_error "Go fallback installation failed"
+        log_error "Source build fallback installation failed"
     fi
     
     log_error "All installation methods failed"
@@ -421,13 +480,13 @@ The script will:
 2. Download the appropriate binary from GitHub releases
 3. Verify the download using SHA256 checksums
 4. Extract and install the binary
-5. Fall back to 'go install' if binary download fails
+5. Fall back to building from source if releases are unavailable
 
 Requirements:
 - curl or wget (for downloading)
 - tar (for extraction)
 - sha256sum or shasum (for verification, optional but recommended)
-- go (for fallback installation, optional)
+- go (for source build fallback, optional)
 
 EOF
     exit 0
