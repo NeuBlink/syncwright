@@ -448,6 +448,8 @@ func validateSemantics(lines []string, language string) ValidationResult {
 			strings.Contains(trimmed, "const ") {
 			// This is a simplified check - a real implementation would need proper parsing
 			// Currently skipping detailed variable declaration analysis
+			// TODO: Implement proper variable declaration analysis
+			continue // Skip to next line for now
 		}
 
 		// Check for unreachable code

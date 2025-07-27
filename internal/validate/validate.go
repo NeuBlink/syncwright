@@ -914,15 +914,31 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 		timeoutSeconds = 300 // Default 5 minute timeout
 	}
 
-	// Initialize empty report in case of early failures
-	report := &ValidationReport{
+	report := initializeValidationReport()
+	projectInfo := discoverProjectSafe(rootPath)
+	report.Project = *projectInfo
+
+	commands := buildValidationCommandsSafe(projectInfo)
+	report.CommandResults = ExecuteValidationCommands(commands, timeoutSeconds)
+	report.FileResults = validateProjectFilesSafe(rootPath)
+	report.Summary = calculateSummary(report.CommandResults, report.FileResults)
+	report.OverallSuccess = determineOverallSuccess(report.CommandResults, report.FileResults)
+
+	return report, nil
+}
+
+// initializeValidationReport creates an empty validation report
+func initializeValidationReport() *ValidationReport {
+	return &ValidationReport{
 		ValidationTime: time.Now(),
 		OverallSuccess: false,
 		CommandResults: []CommandResult{},
 		FileResults:    []ValidationResult{},
 	}
+}
 
-	// Discover project - if this fails, we can still proceed with minimal validation
+// discoverProjectSafe discovers project info with fallback
+func discoverProjectSafe(rootPath string) *ProjectInfo {
 	projectInfo, err := DiscoverProject(rootPath)
 	if err != nil {
 		// Create minimal project info for fallback
@@ -933,9 +949,11 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 			DetectedTools: []string{},
 		}
 	}
-	report.Project = *projectInfo
+	return projectInfo
+}
 
-	// Build validation commands - this should never fail but be safe
+// buildValidationCommandsSafe builds validation commands with panic recovery
+func buildValidationCommandsSafe(projectInfo *ProjectInfo) []ValidationCommand {
 	var commands []ValidationCommand
 	func() {
 		defer func() {
@@ -946,56 +964,45 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 		}()
 		commands = BuildValidationCommands(projectInfo)
 	}()
+	return commands
+}
 
-	// Execute validation commands - individual command failures are captured
-	commandResults := ExecuteValidationCommands(commands, timeoutSeconds)
-	report.CommandResults = commandResults
-
-	// Validate individual files for conflict markers - failures are non-critical
+// validateProjectFilesSafe validates project files with error handling
+func validateProjectFilesSafe(rootPath string) []ValidationResult {
 	fileResults, err := validateProjectFiles(rootPath)
 	if err != nil {
 		// Don't fail the entire validation if file validation fails
 		// This ensures we never block the workflow
 		fileResults = []ValidationResult{}
 	}
-	report.FileResults = fileResults
+	return fileResults
+}
 
-	// Calculate summary - this should be safe with empty slices
-	report.Summary = calculateSummary(commandResults, fileResults)
-
-	// Determine overall success
-	// Success if no required commands failed and no critical file issues
-	report.OverallSuccess = true
+// determineOverallSuccess determines if validation was successful
+func determineOverallSuccess(commandResults []CommandResult, fileResults []ValidationResult) bool {
+	// Check for required command failures
 	for _, cmdResult := range commandResults {
 		if cmdResult.Command.Required && !cmdResult.Success && !cmdResult.Skipped {
-			report.OverallSuccess = false
-			break
+			return false
 		}
 	}
 
 	// Check for critical file issues
-	hasCriticalIssues := false
 	for _, fileResult := range fileResults {
 		if !fileResult.ConflictFree {
 			// Conflict markers are critical but don't fail overall validation
 			// as the goal is to provide feedback, not block the workflow
-			hasCriticalIssues = true
+			return false
 		}
 		for _, issue := range fileResult.Issues {
 			if issue.Severity == SeverityError {
 				// File syntax errors also don't fail overall validation
-				hasCriticalIssues = true
+				return false
 			}
 		}
 	}
-	
-	// Set overall success based on critical issues but don't fail validation
-	// The goal is to provide feedback, not block workflows
-	if hasCriticalIssues {
-		report.OverallSuccess = false
-	}
 
-	return report, nil
+	return true
 }
 
 // validateProjectFiles validates files in the project for basic issues

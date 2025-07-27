@@ -166,6 +166,11 @@ func NewPayloadBuilder() *PayloadBuilder {
 	return builder
 }
 
+// SetMaxContextLines sets the maximum number of context lines
+func (pb *PayloadBuilder) SetMaxContextLines(maxLines int) {
+	pb.preferences.MaxContextLines = maxLines
+}
+
 // BuildPayload creates a conflict payload from a conflict report
 func (pb *PayloadBuilder) BuildPayload(report *gitutils.ConflictReport) (*ConflictPayload, error) {
 	payload := &ConflictPayload{

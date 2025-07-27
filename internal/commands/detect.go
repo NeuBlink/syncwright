@@ -133,6 +133,7 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 		// For now, we'll use the default builder
 		// TODO: Implement custom preferences support
 		// Currently using default builder settings
+		payloadBuilder.SetMaxContextLines(d.options.MaxContextLines)
 	}
 
 	conflictPayload, err := payloadBuilder.BuildPayload(conflictReport)

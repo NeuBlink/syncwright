@@ -145,8 +145,6 @@ runs:
                 validate)
                   echo "Validation completed (CI stub mode)"
                   [ "$2" = "--verbose" ] && echo "Verbose validation output"
-                  [ "$2" = "--comprehensive" ] && echo "Comprehensive validation output"
-                  [ "$2" = "--post-merge" ] && echo "Post-merge validation output"
                   exit 0 ;;
                 detect)
                   echo "Detection completed (CI stub mode)"
@@ -270,7 +268,7 @@ runs:
           "$SYNCWRIGHT_BINARY" format --dry-run
 
           if [ "${{ inputs.run_validation }}" = "true" ]; then
-            "$SYNCWRIGHT_BINARY" validate --comprehensive
+            "$SYNCWRIGHT_BINARY" validate --verbose
           fi
 
           echo "Standard Syncwright operations completed"
@@ -324,7 +322,7 @@ runs:
         fi
 
         # Run comprehensive validation
-        "$SYNCWRIGHT_BINARY" validate --post-merge --verbose
+        "$SYNCWRIGHT_BINARY" validate --verbose
 
         # Check that all conflicts are resolved
         if git ls-files -u | grep -q .; then

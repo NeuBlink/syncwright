@@ -87,29 +87,47 @@ func isConflictStatus(status string) bool {
 
 // ParseConflictHunks extracts conflict hunks from a file's content
 func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
-	// Validate repository path for security
 	if err := validateGitPath(repoPath); err != nil {
 		return nil, fmt.Errorf("invalid repository path: %w", err)
 	}
 	
-	// Validate and sanitize file path to prevent command injection
+	cleanPath, err := validateConflictFilePath(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := readConflictFileContent(cleanPath, repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
+	}
+
+	return parseConflictMarkers(string(content))
+}
+
+// validateConflictFilePath validates file path for conflict parsing
+func validateConflictFilePath(filePath string) (string, error) {
 	cleanPath := filepath.Clean(filePath)
 	if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") ||
 		strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") ||
 		strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") ||
 		strings.Contains(cleanPath, "$") {
-		return nil, fmt.Errorf("invalid file path: %s", filePath)
+		return "", fmt.Errorf("invalid file path: %s", filePath)
 	}
 
 	// Additional validation to ensure path contains only safe characters
 	matched, err := regexp.MatchString(`^[a-zA-Z0-9._/\-]+$`, cleanPath)
 	if err != nil {
-		return nil, fmt.Errorf("error validating file path format: %w", err)
+		return "", fmt.Errorf("error validating file path format: %w", err)
 	}
 	if !matched {
-		return nil, fmt.Errorf("file path contains unsafe characters: %s", filePath)
+		return "", fmt.Errorf("file path contains unsafe characters: %s", filePath)
 	}
 
+	return cleanPath, nil
+}
+
+// readConflictFileContent reads file content for conflict parsing
+func readConflictFileContent(cleanPath, repoPath string) ([]byte, error) {
 	cmd := exec.Command("git", "show", ":"+cleanPath) // #nosec G204 - cleanPath validated with regex above
 	cmd.Dir = repoPath
 
@@ -120,11 +138,11 @@ func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
 		fullPath := filepath.Join(repoPath, cleanPath)
 		content, err = os.ReadFile(fullPath) // #nosec G304 - repoPath and cleanPath are validated above
 		if err != nil {
-			return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
+			return nil, err
 		}
 	}
 
-	return parseConflictMarkers(string(content))
+	return content, nil
 }
 
 // parseConflictMarkers parses conflict markers from file content

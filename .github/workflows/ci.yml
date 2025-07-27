@@ -283,22 +283,8 @@ jobs:
 
       - name: Validate YAML with yamllint
         run: |
-          # Create yamllint config to be less strict for GitHub Actions
-          cat > .yamllint.yml << 'EOF'
-          extends: default
-          rules:
-            line-length:
-              max: 120
-            indentation:
-              spaces: 2
-            comments:
-              min-spaces-from-content: 1
-            comments-indentation: disable
-            truthy:
-              allowed-values: ['true', 'false', 'on', 'off', 'yes', 'no']
-          EOF
-
-          echo "Validating YAML files with yamllint..."
+          echo "Validating YAML files with yamllint using existing config..."
+          # Use the existing .yamllint.yml config from the repository root
           yamllint action.yml .github/workflows/
 
       - name: Validate action.yml syntax (Python fallback)
@@ -485,7 +471,6 @@ jobs:
           echo "Current directory: $(pwd)"
           echo "Files in current directory:"
           ls -la
-          
           # Check for binary with different possible names
           if [ -f "./syncwright" ]; then
             echo "✅ Syncwright binary found at ./syncwright"
@@ -497,7 +482,6 @@ jobs:
             echo "❌ Syncwright binary not found in expected location"
             echo "Searching for syncwright binary in workspace..."
             find . -name "syncwright*" -type f 2>/dev/null || echo "No syncwright files found"
-            
             # This is expected to fail in CI stub mode, so don't exit with error
             echo "This may be expected if running in CI stub mode"
           fi

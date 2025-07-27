@@ -547,28 +547,7 @@ func (pb *PayloadBuilder) extractFileMetadata(filePath, repoPath string, content
 	metadata.LineCount = len(content)
 
 	// Detect line endings from actual file content
-	// #nosec G304 -- fullPath is validated above
-	if file, err := os.Open(fullPath); err == nil {
-		defer func() {
-			if closeErr := file.Close(); closeErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to close file: %v\n", closeErr)
-			}
-		}()
-		scanner := bufio.NewScanner(file)
-		if scanner.Scan() {
-			_ = scanner.Text() // Read first line to check format but don't use it
-			// Read raw bytes to check line endings
-			// #nosec G304 -- fullPath is validated above
-			if rawContent, err := os.ReadFile(fullPath); err == nil {
-				rawStr := string(rawContent)
-				if strings.Contains(rawStr, "\r\n") {
-					metadata.LineEndings = "crlf"
-				} else if strings.Contains(rawStr, "\r") {
-					metadata.LineEndings = "cr"
-				}
-			}
-		}
-	}
+	metadata.LineEndings = pb.detectLineEndings(fullPath)
 
 	// Check if file has tests
 	metadata.HasTests = pb.hasAssociatedTests(filePath, repoPath)
@@ -577,6 +556,38 @@ func (pb *PayloadBuilder) extractFileMetadata(filePath, repoPath string, content
 	metadata.IsGenerated = pb.isGeneratedFile(filePath, content)
 
 	return metadata, nil
+}
+
+// detectLineEndings detects the line ending style of a file
+func (pb *PayloadBuilder) detectLineEndings(fullPath string) string {
+	file, err := os.Open(fullPath)
+	if err != nil {
+		return "lf" // default
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close file: %v\n", closeErr)
+		}
+	}()
+
+	scanner := bufio.NewScanner(file)
+	if !scanner.Scan() {
+		return "lf" // default for empty files
+	}
+
+	// Read raw bytes to check line endings
+	rawContent, err := os.ReadFile(fullPath)
+	if err != nil {
+		return "lf" // default
+	}
+
+	rawStr := string(rawContent)
+	if strings.Contains(rawStr, "\r\n") {
+		return "crlf"
+	} else if strings.Contains(rawStr, "\r") {
+		return "cr"
+	}
+	return "lf"
 }
 
 // hasAssociatedTests checks if there are test files for this source file
