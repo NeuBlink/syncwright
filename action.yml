@@ -238,7 +238,7 @@ runs:
           echo "Running standard Syncwright operations..."
           
           # Run standard operations (validation, formatting, etc.)
-          "$SYNCWRIGHT_BINARY" format --check
+          "$SYNCWRIGHT_BINARY" format --dry-run
           
           if [ "${{ inputs.run_validation }}" = "true" ]; then
             "$SYNCWRIGHT_BINARY" validate --comprehensive
