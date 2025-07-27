@@ -90,7 +90,8 @@ func (g *GoContextExtractor) extractImportPath(trimmed string, imports *[]string
 }
 
 // processSingleLinePatterns processes single-line patterns for imports, functions, and types
-func (g *GoContextExtractor) processSingleLinePatterns(line string, regexes map[string]*regexp.Regexp, imports, functions, classes *[]string) {
+func (g *GoContextExtractor) processSingleLinePatterns(line string,
+	regexes map[string]*regexp.Regexp, imports, functions, classes *[]string) {
 	// Single-line imports
 	if matches := regexes["import"].FindStringSubmatch(line); matches != nil {
 		if matches[1] != "" {
@@ -314,7 +315,8 @@ func (p *PythonContextExtractor) processImportParts(importStr string, imports *[
 }
 
 // processFunctionLine processes function definitions
-func (p *PythonContextExtractor) processFunctionLine(line string, funcRegex, asyncFuncRegex *regexp.Regexp, functions *[]string) {
+func (p *PythonContextExtractor) processFunctionLine(line string,
+	funcRegex, asyncFuncRegex *regexp.Regexp, functions *[]string) {
 	// Regular functions
 	if matches := funcRegex.FindStringSubmatch(line); matches != nil {
 		*functions = append(*functions, matches[1])

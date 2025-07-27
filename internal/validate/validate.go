@@ -149,11 +149,15 @@ func ValidateFile(filepath string) (*ValidationResult, error) {
 
 // checkConflictMarkers scans a file for Git merge conflict markers
 func checkConflictMarkers(filepath string) (bool, []ValidationIssue, error) {
-	file, err := os.Open(filepath)
+	file, err := os.Open(filepath) // #nosec G304 - filepath is validated by caller
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close file: %v\n", closeErr)
+		}
+	}()
 
 	var issues []ValidationIssue
 	scanner := bufio.NewScanner(file)
@@ -421,7 +425,7 @@ func detectGenericTools(rootPath string) []string {
 func detectNpmScripts(packageJSONPath string) []string {
 	var scripts []string
 
-	data, err := os.ReadFile(packageJSONPath)
+	data, err := os.ReadFile(packageJSONPath) // #nosec G304 - packageJSONPath is constructed safely from validated inputs
 	if err != nil {
 		return scripts
 	}
@@ -449,11 +453,15 @@ func detectNpmScripts(packageJSONPath string) []string {
 func detectMakeTargets(makefilePath string) []string {
 	var targets []string
 
-	file, err := os.Open(makefilePath)
+	file, err := os.Open(makefilePath) // #nosec G304 - makefilePath is constructed safely from validated inputs
 	if err != nil {
 		return targets
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close file: %v\n", closeErr)
+		}
+	}()
 
 	scanner := bufio.NewScanner(file)
 	validationTargets := map[string]bool{
@@ -860,7 +868,7 @@ func executeCommand(cmd ValidationCommand, timeoutSeconds int) CommandResult {
 	}
 
 	// Create command
-	execCmd := exec.CommandContext(ctx, cmd.Command, cmd.Args...)
+	execCmd := exec.CommandContext(ctx, cmd.Command, cmd.Args...) // #nosec G204 - cmd.Command is validated with regex above
 	if cmd.WorkingDir != "" {
 		execCmd.Dir = cmd.WorkingDir
 	}

@@ -271,13 +271,15 @@ jobs:
             echo "2. ⏳ Marketplace publishing will be triggered" >> $GITHUB_STEP_SUMMARY
           else
             echo "1. 📝 Create GitHub release manually if desired" >> $GITHUB_STEP_SUMMARY
-            echo "2. 🔧 Monitor workflows at: https://github.com/${{ github.repository }}/actions" >> \
-              $GITHUB_STEP_SUMMARY
+            echo "2. 🔧 Monitor workflows at: " >> $GITHUB_STEP_SUMMARY
+            echo "https://github.com/${{ github.repository }}/actions" >> $GITHUB_STEP_SUMMARY
           fi
 
-          echo "3. 🔍 Monitor release workflow: https://github.com/${{ github.repository }}/actions/workflows/release.yml" >> \
+          echo "3. 🔍 Monitor release workflow: " >> $GITHUB_STEP_SUMMARY
+          echo "https://github.com/${{ github.repository }}/actions/workflows/release.yml" >> \
             $GITHUB_STEP_SUMMARY
-          echo "4. 🏪 Monitor marketplace publishing: https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml" >> \
+          echo "4. 🏪 Monitor marketplace publishing: " >> $GITHUB_STEP_SUMMARY
+          echo "https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml" >> \
             $GITHUB_STEP_SUMMARY
 
   trigger-release:
@@ -321,13 +323,15 @@ jobs:
         run: |
           echo "## 🚀 Release Triggered" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The release workflow has been triggered for version \`${{ needs.validate-inputs.outputs.version-tag }}\`" >> \
-            $GITHUB_STEP_SUMMARY
+          echo "The release workflow has been triggered for version " >> $GITHUB_STEP_SUMMARY
+          echo "\`${{ needs.validate-inputs.outputs.version-tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Monitor Progress:**" >> $GITHUB_STEP_SUMMARY
-          echo "- [Release Workflow](https://github.com/${{ github.repository }}/actions/workflows/release.yml)" >> \
+          echo "- [Release Workflow]" >> $GITHUB_STEP_SUMMARY
+          echo "(https://github.com/${{ github.repository }}/actions/workflows/release.yml)" >> \
             $GITHUB_STEP_SUMMARY
-          echo "- [Marketplace Publishing](https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml)" >> \
+          echo "- [Marketplace Publishing]" >> $GITHUB_STEP_SUMMARY
+          echo "(https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml)" >> \
             $GITHUB_STEP_SUMMARY
 
   notify-completion:

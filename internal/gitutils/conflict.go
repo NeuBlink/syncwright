@@ -94,7 +94,10 @@ func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
 	
 	// Validate and sanitize file path to prevent command injection
 	cleanPath := filepath.Clean(filePath)
-	if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") || strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") || strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") || strings.Contains(cleanPath, "$") {
+	if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") ||
+		strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") ||
+		strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") ||
+		strings.Contains(cleanPath, "$") {
 		return nil, fmt.Errorf("invalid file path: %s", filePath)
 	}
 
@@ -107,7 +110,7 @@ func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
 		return nil, fmt.Errorf("file path contains unsafe characters: %s", filePath)
 	}
 
-	cmd := exec.Command("git", "show", ":"+cleanPath)
+	cmd := exec.Command("git", "show", ":"+cleanPath) // #nosec G204 - cleanPath validated with regex above
 	cmd.Dir = repoPath
 
 	// If the file doesn't exist in git, read from filesystem

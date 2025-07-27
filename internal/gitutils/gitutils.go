@@ -93,7 +93,7 @@ func GetRecentlyModifiedFiles(repoPath string, days int) ([]string, error) {
 		return nil, fmt.Errorf("invalid date format: %s", since)
 	}
 
-	cmd := exec.Command("git", "log", "--name-only", "--pretty=format:", "--since="+since)
+	cmd := exec.Command("git", "log", "--name-only", "--pretty=format:", "--since="+since) // #nosec G204 - since parameter validated with regex above
 	cmd.Dir = repoPath
 
 	output, err := cmd.Output()

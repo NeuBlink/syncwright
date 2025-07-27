@@ -348,7 +348,11 @@ func (a *AIApplyCommand) sendToAI(conflictPayload *payload.ConflictPayload) (*AI
 			lastErr = fmt.Errorf("request failed: %w", err)
 			continue
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to close response body: %v\n", closeErr)
+			}
+		}()
 
 		responseData, err := io.ReadAll(resp.Body)
 		if err != nil {

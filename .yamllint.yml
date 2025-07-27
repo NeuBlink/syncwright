@@ -1,7 +1,7 @@
 extends: default
 rules:
   line-length:
-    max: 200  # Set a more reasonable limit instead of disable
+    max: 120  # GitHub Actions standard line length limit
   comments: disable
   comments-indentation: disable
   truthy: disable

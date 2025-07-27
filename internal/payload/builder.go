@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -209,7 +210,8 @@ func (pb *PayloadBuilder) BuildPayload(report *gitutils.ConflictReport) (*Confli
 }
 
 // buildFilePayload creates a file payload from a conflict file
-func (pb *PayloadBuilder) buildFilePayload(conflictFile gitutils.ConflictFile, repoPath string) (*ConflictFilePayload, error) {
+func (pb *PayloadBuilder) buildFilePayload(conflictFile gitutils.ConflictFile,
+	repoPath string) (*ConflictFilePayload, error) {
 	language := DetectLanguage(conflictFile.Path)
 	fileType := DetectFileType(conflictFile.Path)
 
@@ -293,7 +295,8 @@ func (pb *PayloadBuilder) sanitizeLine(line string) string {
 }
 
 // extractConflictContext extracts surrounding context for a conflict hunk
-func (pb *PayloadBuilder) extractConflictContext(fileContent []string, hunk gitutils.ConflictHunk) ([]string, []string) {
+func (pb *PayloadBuilder) extractConflictContext(fileContent []string,
+	hunk gitutils.ConflictHunk) ([]string, []string) {
 	maxLines := pb.preferences.MaxContextLines
 
 	// Extract pre-context
@@ -317,8 +320,10 @@ func (pb *PayloadBuilder) extractConflictContext(fileContent []string, hunk gitu
 
 // classifyConflict determines the type of conflict
 func (pb *PayloadBuilder) classifyConflict(hunk gitutils.ConflictHunk) string {
-	oursEmpty := len(hunk.OursLines) == 0 || (len(hunk.OursLines) == 1 && strings.TrimSpace(hunk.OursLines[0]) == "")
-	theirsEmpty := len(hunk.TheirsLines) == 0 || (len(hunk.TheirsLines) == 1 && strings.TrimSpace(hunk.TheirsLines[0]) == "")
+	oursEmpty := len(hunk.OursLines) == 0 ||
+		(len(hunk.OursLines) == 1 && strings.TrimSpace(hunk.OursLines[0]) == "")
+	theirsEmpty := len(hunk.TheirsLines) == 0 ||
+		(len(hunk.TheirsLines) == 1 && strings.TrimSpace(hunk.TheirsLines[0]) == "")
 
 	if oursEmpty && theirsEmpty {
 		return "deletion"
@@ -363,7 +368,10 @@ func (pb *PayloadBuilder) generatePayloadHash(payload *ConflictPayload) string {
 	for _, file := range payload.Files {
 		hasher.Write([]byte(file.Path))
 		for _, conflict := range file.Conflicts {
-			hasher.Write([]byte(fmt.Sprintf("%d:%d", conflict.StartLine, conflict.EndLine)))
+			if _, err := fmt.Fprintf(hasher, "%d:%d", conflict.StartLine, conflict.EndLine); err != nil {
+				// Hash writes should not fail, but handle error for completeness
+				fmt.Fprintf(os.Stderr, "Warning: failed to write to hasher: %v\n", err)
+			}
 		}
 	}
 

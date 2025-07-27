@@ -251,7 +251,7 @@ func (pb *PayloadBuilder) extractCommitInfo(repoPath string) (CommitInfo, error)
 			return info, fmt.Errorf("invalid commit hash format: %s", info.TheirsCommit)
 		}
 
-		cmd = exec.Command("git", "merge-base", info.OursCommit, info.TheirsCommit)
+		cmd = exec.Command("git", "merge-base", info.OursCommit, info.TheirsCommit) // #nosec G204 - commit hashes validated with regex above
 		cmd.Dir = repoPath
 		if output, err := cmd.Output(); err == nil {
 			info.BaseCommit = strings.TrimSpace(string(output))
@@ -411,7 +411,8 @@ func (pb *PayloadBuilder) detectPythonFramework(repoPath string) string {
 	// Check requirements files
 	reqFiles := []string{"requirements.txt", "pyproject.toml", "Pipfile"}
 	for _, reqFile := range reqFiles {
-		if content, err := os.ReadFile(filepath.Join(repoPath, reqFile)); err == nil { // #nosec G304 - repoPath is validated above
+		// #nosec G304 -- repoPath is validated above
+		if content, err := os.ReadFile(filepath.Join(repoPath, reqFile)); err == nil {
 			contentStr := strings.ToLower(string(content))
 			if strings.Contains(contentStr, "django") {
 				return "django"
@@ -437,7 +438,8 @@ func (pb *PayloadBuilder) detectGoFramework(repoPath string) string {
 		return ""
 	}
 	
-	if content, err := os.ReadFile(filepath.Join(repoPath, "go.mod")); err == nil { // #nosec G304 - repoPath is validated above
+	// #nosec G304 -- repoPath is validated above
+	if content, err := os.ReadFile(filepath.Join(repoPath, "go.mod")); err == nil {
 		contentStr := string(content)
 		if strings.Contains(contentStr, "github.com/gin-gonic/gin") {
 			return "gin"
@@ -463,7 +465,8 @@ func (pb *PayloadBuilder) detectJavaFramework(repoPath string) string {
 	}
 	
 	pomPath := filepath.Join(repoPath, "pom.xml")
-	if content, err := os.ReadFile(pomPath); err == nil { // #nosec G304 - repoPath is validated above
+	// #nosec G304 -- repoPath is validated above
+	if content, err := os.ReadFile(pomPath); err == nil {
 		contentStr := string(content)
 		if strings.Contains(contentStr, "spring-boot") {
 			return "spring-boot"
@@ -543,13 +546,19 @@ func (pb *PayloadBuilder) extractFileMetadata(filePath, repoPath string, content
 	metadata.LineCount = len(content)
 
 	// Detect line endings from actual file content
-	if file, err := os.Open(fullPath); err == nil { // #nosec G304 - repoPath and filePath are validated above
-		defer file.Close()
+	// #nosec G304 -- fullPath is validated above
+	if file, err := os.Open(fullPath); err == nil {
+		defer func() {
+			if closeErr := file.Close(); closeErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to close file: %v\n", closeErr)
+			}
+		}()
 		scanner := bufio.NewScanner(file)
 		if scanner.Scan() {
 			_ = scanner.Text() // Read first line to check format but don't use it
 			// Read raw bytes to check line endings
-			if rawContent, err := os.ReadFile(fullPath); err == nil { // #nosec G304 - repoPath and filePath are validated above
+			// #nosec G304 -- fullPath is validated above
+			if rawContent, err := os.ReadFile(fullPath); err == nil {
 				rawStr := string(rawContent)
 				if strings.Contains(rawStr, "\r\n") {
 					metadata.LineEndings = "crlf"

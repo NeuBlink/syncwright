@@ -413,7 +413,8 @@ jobs:
             if [ "${{ needs.trigger-marketplace-publish.result }}" = "success" ]; then
               echo "🏪 **Marketplace publishing triggered**" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "🔍 **Monitor marketplace publishing**: https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml" >> \
+              echo "🔍 **Monitor marketplace publishing**: " >> $GITHUB_STEP_SUMMARY
+              echo "https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml" >> \
                 $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "🔧 **Usage**: " >> $GITHUB_STEP_SUMMARY

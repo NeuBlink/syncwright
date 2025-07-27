@@ -28,6 +28,7 @@ func validateFilePath(filePath string) error {
 	if filepath.IsAbs(cleanPath) {
 		// Allow absolute paths but log them for security review
 		// In production, you might want to restrict this further
+		fmt.Fprintf(os.Stderr, "Info: using absolute path: %s\n", cleanPath)
 	}
 	
 	// Check for potentially dangerous characters
@@ -54,7 +55,11 @@ func ReadInput(filename string, v interface{}) error {
 		if err != nil {
 			return fmt.Errorf("failed to open input file %s: %w", filename, err)
 		}
-		defer file.Close()
+		defer func() {
+			if closeErr := file.Close(); closeErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to close input file: %v\n", closeErr)
+			}
+		}()
 		reader = file
 	}
 
@@ -82,7 +87,11 @@ func WriteOutput(filename string, v interface{}) error {
 		if err != nil {
 			return fmt.Errorf("failed to create output file %s: %w", filename, err)
 		}
-		defer file.Close()
+		defer func() {
+			if closeErr := file.Close(); closeErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to close output file: %v\n", closeErr)
+			}
+		}()
 		writer = file
 	}
 

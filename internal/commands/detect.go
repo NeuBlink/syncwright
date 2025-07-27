@@ -131,6 +131,7 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 	if d.options.MaxContextLines > 0 {
 		// Note: This would require modifying the PayloadBuilder to accept preferences
 		// For now, we'll use the default builder
+		// TODO: Implement custom preferences support
 	}
 
 	conflictPayload, err := payloadBuilder.BuildPayload(conflictReport)

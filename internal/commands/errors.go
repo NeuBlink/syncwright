@@ -3,6 +3,9 @@ package commands
 import (
 	"fmt"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // ErrorType represents different types of errors that can occur
@@ -208,8 +211,9 @@ func (eh *ErrorHandler) formatSyncwrightError(err *SyncwrightError) string {
 	var builder strings.Builder
 
 	// Error header
+	titleCaser := cases.Title(language.English)
 	builder.WriteString(fmt.Sprintf("❌ %s Error: %s\n",
-		strings.Title(string(err.Type)), err.Message))
+		titleCaser.String(string(err.Type)), err.Message))
 
 	// Details
 	if err.Details != "" {
