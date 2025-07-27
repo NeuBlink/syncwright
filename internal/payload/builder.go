@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"syncwright/internal/gitutils"
+	"github.com/NeuBlink/syncwright/internal/gitutils"
 )
 
 // ConflictPayload represents the JSON payload sent to AI for resolution

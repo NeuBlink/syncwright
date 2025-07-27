@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"syncwright/internal/gitutils"
-	"syncwright/internal/payload"
+	"github.com/NeuBlink/syncwright/internal/gitutils"
+	"github.com/NeuBlink/syncwright/internal/payload"
 )
 
 // AIApplyOptions contains options for the ai-apply command
@@ -388,7 +388,10 @@ func (a *AIApplyCommand) askForConfirmation(resolutions []gitutils.ConflictResol
 
 	fmt.Print("\nApply these resolutions? [y/N]: ")
 	var response string
-	fmt.Scanln(&response)
+	if _, err := fmt.Scanln(&response); err != nil {
+		// If input fails, default to no
+		response = "n"
+	}
 
 	return strings.ToLower(strings.TrimSpace(response)) == "y"
 }

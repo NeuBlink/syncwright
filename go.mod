@@ -1,4 +1,4 @@
-module syncwright
+module github.com/NeuBlink/syncwright
 
 go 1.22
 

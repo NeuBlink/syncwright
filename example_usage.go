@@ -6,9 +6,9 @@ import (
 	"log"
 	"os"
 
-	"syncwright/internal/commands"
-	"syncwright/internal/gitutils"
-	"syncwright/internal/payload"
+	"github.com/NeuBlink/syncwright/internal/commands"
+	"github.com/NeuBlink/syncwright/internal/gitutils"
+	"github.com/NeuBlink/syncwright/internal/payload"
 )
 
 // This file demonstrates how to use the Syncwright conflict resolution system

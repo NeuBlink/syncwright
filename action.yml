@@ -82,11 +82,19 @@ runs:
         fi
         
         # Check if binary already exists in action path (for local testing)
-        BINARY_PATH="${ACTION_PATH}/bin/syncwright"
+        # Handle Windows executable extension
+        if [ "$RUNNER_OS" = "Windows" ] || [ "$(go env GOOS)" = "windows" ]; then
+          BINARY_PATH="${ACTION_PATH}/bin/syncwright.exe"
+          TARGET_BINARY="./syncwright.exe"
+        else
+          BINARY_PATH="${ACTION_PATH}/bin/syncwright"
+          TARGET_BINARY="./syncwright"
+        fi
+        
         if [ -f "$BINARY_PATH" ]; then
           echo "Using pre-built binary from action path"
-          cp "$BINARY_PATH" "./syncwright"
-          chmod +x "./syncwright"
+          cp "$BINARY_PATH" "$TARGET_BINARY"
+          chmod +x "$TARGET_BINARY"
         else
           # Run the installation script for release downloads
           echo "Running installation script..."
@@ -99,7 +107,12 @@ runs:
               echo "Building from source using Go..."
               cd "$ACTION_PATH"
               if [ -f "go.mod" ]; then
-                OUTPUT_PATH="${WORKSPACE_PATH}/syncwright"
+                # Handle Windows executable extension
+                if [ "$RUNNER_OS" = "Windows" ] || [ "$(go env GOOS)" = "windows" ]; then
+                  OUTPUT_PATH="${WORKSPACE_PATH}/syncwright.exe"
+                else
+                  OUTPUT_PATH="${WORKSPACE_PATH}/syncwright"
+                fi
                 go build -o "$OUTPUT_PATH" ./cmd/syncwright
                 cd "$WORKSPACE_PATH"
               else
@@ -128,15 +141,23 @@ runs:
         # Add to PATH for subsequent steps
         echo "$WORKSPACE_PATH" >> $GITHUB_PATH
         
+        # Set binary name based on platform for all subsequent steps
+        if [ "$RUNNER_OS" = "Windows" ] || [ "$(go env GOOS)" = "windows" ]; then
+          SYNCWRIGHT_BINARY="./syncwright.exe"
+        else
+          SYNCWRIGHT_BINARY="./syncwright"
+        fi
+        echo "SYNCWRIGHT_BINARY=$SYNCWRIGHT_BINARY" >> $GITHUB_ENV
+        
         # Verify installation
-        ./syncwright --version
+        "$SYNCWRIGHT_BINARY" --version
 
     - name: Run Syncwright validation
       if: inputs.run_validation == 'true'
       shell: bash
       run: |
         echo "Running Syncwright validation..."
-        ./syncwright validate --verbose
+        "$SYNCWRIGHT_BINARY" validate --verbose
 
     - name: Run Syncwright merge conflict resolution
       id: run-syncwright
@@ -160,7 +181,7 @@ runs:
         ls -la
         echo "Syncwright binary location:"
         which syncwright || echo "syncwright not in PATH"
-        ls -la ./syncwright 2>/dev/null || echo "No ./syncwright file"
+        ls -la "$SYNCWRIGHT_BINARY" 2>/dev/null || echo "No $SYNCWRIGHT_BINARY file"
         
         # Check if we need to run AI-powered resolution
         if [ "${{ inputs.merge_failed }}" = "true" ]; then
@@ -174,9 +195,9 @@ runs:
           fi
           
           # Run AI-powered conflict resolution
-          echo "Running: ./syncwright resolve --ai --max-tokens=$SYNCWRIGHT_MAX_TOKENS"
+          echo "Running: $SYNCWRIGHT_BINARY resolve --ai --max-tokens=$SYNCWRIGHT_MAX_TOKENS"
           
-          if ./syncwright resolve --ai --max-tokens="$SYNCWRIGHT_MAX_TOKENS" --verbose; then
+          if "$SYNCWRIGHT_BINARY" resolve --ai --max-tokens="$SYNCWRIGHT_MAX_TOKENS" --verbose; then
             echo "conflicts_resolved=true" >> $GITHUB_OUTPUT
             
             # Count modified files
@@ -194,10 +215,10 @@ runs:
           echo "Running standard Syncwright operations..."
           
           # Run standard operations (validation, formatting, etc.)
-          ./syncwright format --check
+          "$SYNCWRIGHT_BINARY" format --check
           
           if [ "${{ inputs.run_validation }}" = "true" ]; then
-            ./syncwright validate --comprehensive
+            "$SYNCWRIGHT_BINARY" validate --comprehensive
           fi
           
           echo "Standard Syncwright operations completed"
@@ -250,7 +271,7 @@ runs:
         fi
         
         # Run comprehensive validation
-        ./syncwright validate --post-merge --verbose
+        "$SYNCWRIGHT_BINARY" validate --post-merge --verbose
         
         # Check that all conflicts are resolved
         if git ls-files -u | grep -q .; then

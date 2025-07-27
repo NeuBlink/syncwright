@@ -14,6 +14,21 @@ import (
 	"time"
 )
 
+// Constants for commonly used strings
+const (
+	SeverityError   = "error"
+	SeverityWarning = "warning"
+	SeverityInfo    = "info"
+	
+	ScriptBuild     = "build"
+	ScriptTest      = "test"
+	ScriptLint      = "lint"
+	ScriptCheck     = "check"
+	ScriptValidate  = "validate"
+	ScriptFormat    = "format"
+	ScriptTypeCheck = "type-check"
+)
+
 // ProjectType represents the type of project detected
 type ProjectType string
 
@@ -122,7 +137,7 @@ func ValidateFile(filepath string) (*ValidationResult, error) {
 
 	// Determine overall validity
 	for _, issue := range result.Issues {
-		if issue.Severity == "error" {
+		if issue.Severity == SeverityError {
 			result.IsValid = false
 			break
 		}
@@ -154,7 +169,7 @@ func checkConflictMarkers(filepath string) (bool, []ValidationIssue, error) {
 				issues = append(issues, ValidationIssue{
 					Line:     lineNum,
 					Message:  fmt.Sprintf("Git merge conflict marker found: %s", marker),
-					Severity: "error",
+					Severity: SeverityError,
 				})
 			}
 		}
@@ -419,7 +434,7 @@ func detectNpmScripts(packageJSONPath string) []string {
 	}
 
 	// Common validation scripts
-	validationScripts := []string{"test", "build", "lint", "type-check", "format"}
+	validationScripts := []string{ScriptTest, ScriptBuild, ScriptLint, ScriptTypeCheck, ScriptFormat}
 	for _, script := range validationScripts {
 		if _, exists := packageJSON.Scripts[script]; exists {
 			scripts = append(scripts, script)
@@ -441,12 +456,12 @@ func detectMakeTargets(makefilePath string) []string {
 
 	scanner := bufio.NewScanner(file)
 	validationTargets := map[string]bool{
-		"test":     true,
-		"build":    true,
-		"lint":     true,
-		"check":    true,
-		"validate": true,
-		"format":   true,
+		ScriptTest:     true,
+		ScriptBuild:    true,
+		ScriptLint:     true,
+		ScriptCheck:    true,
+		ScriptValidate: true,
+		ScriptFormat:   true,
 	}
 
 	for scanner.Scan() {
@@ -494,7 +509,7 @@ func buildGoCommands(projectInfo *ProjectInfo) []ValidationCommand {
 		commands = append(commands, ValidationCommand{
 			Name:        "go_build",
 			Command:     "go",
-			Args:        []string{"build", "./..."},
+			Args:        []string{ScriptBuild, "./..."},
 			WorkingDir:  projectInfo.RootPath,
 			Description: "Build Go project to check for compilation errors",
 			Required:    true,
@@ -570,7 +585,7 @@ func buildNodeCommands(projectInfo *ProjectInfo) []ValidationCommand {
 			var description string
 
 			switch script {
-			case "build":
+			case ScriptBuild:
 				required = true
 				description = "Build the project"
 			case "test":
@@ -731,7 +746,7 @@ func buildRustCommands(projectInfo *ProjectInfo) []ValidationCommand {
 		commands = append(commands, ValidationCommand{
 			Name:        "cargo_build",
 			Command:     "cargo",
-			Args:        []string{"build"},
+			Args:        []string{ScriptBuild},
 			WorkingDir:  projectInfo.RootPath,
 			Description: "Build Rust project",
 			Required:    true,
@@ -778,8 +793,8 @@ func buildGenericCommands(projectInfo *ProjectInfo) []ValidationCommand {
 		targets := detectMakeTargets(makefilePath)
 		for _, target := range targets {
 			var required bool
-			if target == "build" || target == "test" {
-				required = target == "build"
+			if target == ScriptBuild || target == ScriptTest {
+				required = target == ScriptBuild
 			}
 
 			commands = append(commands, ValidationCommand{
@@ -944,7 +959,7 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 			// as the goal is to provide feedback, not block the workflow
 		}
 		for _, issue := range fileResult.Issues {
-			if issue.Severity == "error" {
+			if issue.Severity == SeverityError {
 				// File syntax errors also don't fail overall validation
 			}
 		}
@@ -1009,8 +1024,12 @@ func findFilesToValidate(rootPath string) ([]string, error) {
 		}
 
 		// Skip common directories that should not be validated
-		relPath, _ := filepath.Rel(rootPath, path)
-		skipDirs := []string{"node_modules", "vendor", "target", ".git", "dist", "build"}
+		relPath, err := filepath.Rel(rootPath, path)
+		if err != nil {
+			// If we can't get relative path, skip this file
+			return nil
+		}
+		skipDirs := []string{"node_modules", "vendor", "target", ".git", "dist", ScriptBuild}
 		for _, skipDir := range skipDirs {
 			if strings.Contains(relPath, skipDir+string(filepath.Separator)) {
 				return nil
@@ -1019,7 +1038,11 @@ func findFilesToValidate(rootPath string) ([]string, error) {
 
 		// Check if file matches any pattern
 		for _, pattern := range patterns {
-			matched, _ := filepath.Match(pattern, info.Name())
+			matched, err := filepath.Match(pattern, info.Name())
+			if err != nil {
+				// If pattern matching fails, skip this pattern
+				continue
+			}
 			if matched {
 				files = append(files, path)
 				break
@@ -1060,9 +1083,9 @@ func calculateSummary(commandResults []CommandResult, fileResults []ValidationRe
 
 		for _, issue := range result.Issues {
 			summary.TotalIssues++
-			if issue.Severity == "error" {
+			if issue.Severity == SeverityError {
 				summary.ErrorIssues++
-			} else if issue.Severity == "warning" {
+			} else if issue.Severity == SeverityWarning {
 				summary.WarningIssues++
 			}
 		}

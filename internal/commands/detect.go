@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"syncwright/internal/gitutils"
-	"syncwright/internal/payload"
+	"github.com/NeuBlink/syncwright/internal/gitutils"
+	"github.com/NeuBlink/syncwright/internal/payload"
 )
 
 // DetectOptions contains options for the detect command

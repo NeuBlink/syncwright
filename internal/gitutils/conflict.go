@@ -3,7 +3,9 @@ package gitutils
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -91,10 +93,9 @@ func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
 	// If the file doesn't exist in git, read from filesystem
 	content, err := cmd.Output()
 	if err != nil {
-		// Try reading from filesystem
-		cmd = exec.Command("cat", filePath)
-		cmd.Dir = repoPath
-		content, err = cmd.Output()
+		// Try reading from filesystem using Go's standard library instead of shell command
+		fullPath := filepath.Join(repoPath, filePath)
+		content, err = os.ReadFile(fullPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
 		}
@@ -108,69 +109,102 @@ func parseConflictMarkers(content string) ([]ConflictHunk, error) {
 	lines := strings.Split(content, "\n")
 	var hunks []ConflictHunk
 
-	// Regex patterns for conflict markers
-	startMarker := regexp.MustCompile(`^<{7}\s*(.*)$`) // <<<<<<< HEAD or <<<<<<< branch
-	middleMarker := regexp.MustCompile(`^={7}$`)       // =======
-	baseMarker := regexp.MustCompile(`^\|{7}\s*(.*)$`) // ||||||| base (diff3 style)
-	endMarker := regexp.MustCompile(`^>{7}\s*(.*)$`)   // >>>>>>> branch
+	parser := &conflictParser{
+		startMarker:  regexp.MustCompile(`^<{7}\s*(.*)$`), // <<<<<<< HEAD or <<<<<<< branch
+		middleMarker: regexp.MustCompile(`^={7}$`),         // =======
+		baseMarker:   regexp.MustCompile(`^\|{7}\s*(.*)$`), // ||||||| base (diff3 style)
+		endMarker:    regexp.MustCompile(`^>{7}\s*(.*)$`),   // >>>>>>> branch
+	}
 
 	i := 0
 	for i < len(lines) {
-		line := lines[i]
-
-		// Look for start of conflict
-		if startMarker.MatchString(line) {
-			hunk := ConflictHunk{
-				StartLine: i + 1, // 1-based line numbers
+		if parser.startMarker.MatchString(lines[i]) {
+			hunk, nextIndex := parser.parseConflictHunk(lines, i)
+			if hunk != nil {
+				hunks = append(hunks, *hunk)
 			}
-
-			i++ // Move past start marker
-
-			// Collect "ours" lines until we hit middle or base marker
-			for i < len(lines) && !middleMarker.MatchString(lines[i]) && !baseMarker.MatchString(lines[i]) {
-				hunk.OursLines = append(hunk.OursLines, lines[i])
-				i++
-			}
-
-			// Check if we have a base section (diff3 style)
-			if i < len(lines) && baseMarker.MatchString(lines[i]) {
-				i++ // Move past base marker
-				// Collect base lines until middle marker
-				for i < len(lines) && !middleMarker.MatchString(lines[i]) {
-					hunk.BaseLines = append(hunk.BaseLines, lines[i])
-					i++
-				}
-			}
-
-			// Should be at middle marker now
-			if i < len(lines) && middleMarker.MatchString(lines[i]) {
-				i++ // Move past middle marker
-
-				// Collect "theirs" lines until end marker
-				for i < len(lines) && !endMarker.MatchString(lines[i]) {
-					hunk.TheirsLines = append(hunk.TheirsLines, lines[i])
-					i++
-				}
-
-				// Should be at end marker
-				if i < len(lines) && endMarker.MatchString(lines[i]) {
-					hunk.EndLine = i + 1 // 1-based line numbers
-					hunks = append(hunks, hunk)
-				}
-			}
+			i = nextIndex
+		} else {
+			i++
 		}
-		i++
 	}
 
 	return hunks, nil
 }
 
+// conflictParser contains regex patterns and logic for parsing conflict markers
+type conflictParser struct {
+	startMarker  *regexp.Regexp
+	middleMarker *regexp.Regexp
+	baseMarker   *regexp.Regexp
+	endMarker    *regexp.Regexp
+}
+
+// parseConflictHunk parses a single conflict hunk starting at the given index
+func (p *conflictParser) parseConflictHunk(lines []string, startIndex int) (*ConflictHunk, int) {
+	hunk := &ConflictHunk{
+		StartLine: startIndex + 1, // 1-based line numbers
+	}
+
+	i := startIndex + 1 // Move past start marker
+
+	// Collect "ours" lines
+	i = p.collectOursLines(lines, i, hunk)
+
+	// Check for base section (diff3 style)
+	if i < len(lines) && p.baseMarker.MatchString(lines[i]) {
+		i = p.collectBaseLines(lines, i+1, hunk) // Move past base marker
+	}
+
+	// Process middle marker and collect "theirs" lines
+	if i < len(lines) && p.middleMarker.MatchString(lines[i]) {
+		i = p.collectTheirsLines(lines, i+1, hunk) // Move past middle marker
+
+		// Check for end marker
+		if i < len(lines) && p.endMarker.MatchString(lines[i]) {
+			hunk.EndLine = i + 1 // 1-based line numbers
+			return hunk, i + 1
+		}
+	}
+
+	// Invalid conflict hunk
+	return nil, i
+}
+
+// collectOursLines collects lines until we hit middle or base marker
+func (p *conflictParser) collectOursLines(lines []string, startIndex int, hunk *ConflictHunk) int {
+	i := startIndex
+	for i < len(lines) && !p.middleMarker.MatchString(lines[i]) && !p.baseMarker.MatchString(lines[i]) {
+		hunk.OursLines = append(hunk.OursLines, lines[i])
+		i++
+	}
+	return i
+}
+
+// collectBaseLines collects base lines until middle marker
+func (p *conflictParser) collectBaseLines(lines []string, startIndex int, hunk *ConflictHunk) int {
+	i := startIndex
+	for i < len(lines) && !p.middleMarker.MatchString(lines[i]) {
+		hunk.BaseLines = append(hunk.BaseLines, lines[i])
+		i++
+	}
+	return i
+}
+
+// collectTheirsLines collects "theirs" lines until end marker
+func (p *conflictParser) collectTheirsLines(lines []string, startIndex int, hunk *ConflictHunk) int {
+	i := startIndex
+	for i < len(lines) && !p.endMarker.MatchString(lines[i]) {
+		hunk.TheirsLines = append(hunk.TheirsLines, lines[i])
+		i++
+	}
+	return i
+}
+
 // ExtractFileContext extracts surrounding context lines for AI processing
 func ExtractFileContext(filePath, repoPath string, contextLines int) ([]string, error) {
-	cmd := exec.Command("cat", filePath)
-	cmd.Dir = repoPath
-
-	content, err := cmd.Output()
+	fullPath := filepath.Join(repoPath, filePath)
+	content, err := os.ReadFile(fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
 	}

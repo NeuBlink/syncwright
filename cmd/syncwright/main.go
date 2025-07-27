@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"syncwright/internal/commands"
-	"syncwright/internal/format"
-	"syncwright/internal/iojson"
+	"github.com/NeuBlink/syncwright/internal/commands"
+	"github.com/NeuBlink/syncwright/internal/format"
+	"github.com/NeuBlink/syncwright/internal/iojson"
 )
 
 // Build information - set via ldflags during build

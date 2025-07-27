@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"syncwright/internal/iojson"
-	"syncwright/internal/validate"
+	"github.com/NeuBlink/syncwright/internal/iojson"
+	"github.com/NeuBlink/syncwright/internal/validate"
 )
 
 // ValidateOptions contains options for the validate command

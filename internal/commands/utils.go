@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"syncwright/internal/gitutils"
+	"github.com/NeuBlink/syncwright/internal/gitutils"
 )
 
 // ValidationResult represents the result of validating a resolution

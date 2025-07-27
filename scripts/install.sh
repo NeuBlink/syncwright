@@ -7,7 +7,7 @@
 set -euo pipefail
 
 # Configuration
-REPO_OWNER="neublink"
+REPO_OWNER="NeuBlink"
 REPO_NAME="syncwright"
 BINARY_NAME="syncwright"
 INSTALL_DIR="${PWD}"
@@ -19,21 +19,21 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Logging functions
+# Logging functions - all output to stderr to avoid contaminating command substitution
 log_info() {
-    echo -e "${BLUE}[INFO]${NC} $*"
+    echo -e "${BLUE}[INFO]${NC} $*" >&2
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $*"
+    echo -e "${GREEN}[SUCCESS]${NC} $*" >&2
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $*"
+    echo -e "${YELLOW}[WARNING]${NC} $*" >&2
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $*"
+    echo -e "${RED}[ERROR]${NC} $*" >&2
 }
 
 # Error handling
@@ -102,7 +102,7 @@ get_version() {
     fi
     
     # Ensure version starts with 'v' if it's not 'latest'
-    if [ "$version" != "latest" ] && [[ ! $version =~ ^v ]]; then
+    if [ "$version" != "latest" ] && [ "${version#v}" = "$version" ]; then
         version="v${version}"
     fi
     
@@ -301,7 +301,7 @@ install_via_go() {
         return 1
     fi
     
-    local go_package="${REPO_OWNER}/${REPO_NAME}/cmd/${BINARY_NAME}@latest"
+    local go_package="github.com/${REPO_OWNER}/${REPO_NAME}/cmd/${BINARY_NAME}@latest"
     log_info "Installing via: go install $go_package"
     
     # Install to temporary location first

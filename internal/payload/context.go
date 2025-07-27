@@ -10,17 +10,27 @@ import (
 	"strings"
 )
 
+// Constants for commonly used languages and file types
+const (
+	LanguageJavaScript = "javascript"
+	LanguageTypeScript = "typescript"
+	LanguagePython     = "python"
+	LanguageGo         = "go"
+	LanguageJSON       = "json"
+	FileTypeText       = "text"
+)
+
 // DetectLanguage determines the programming language from file extension
 func DetectLanguage(filePath string) string {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
 	languageMap := map[string]string{
-		".go":    "go",
-		".js":    "javascript",
-		".jsx":   "javascript",
-		".ts":    "typescript",
-		".tsx":   "typescript",
-		".py":    "python",
+		".go":    LanguageGo,
+		".js":    LanguageJavaScript,
+		".jsx":   LanguageJavaScript,
+		".ts":    LanguageTypeScript,
+		".tsx":   LanguageTypeScript,
+		".py":    LanguagePython,
 		".pyx":   "python",
 		".pyi":   "python",
 		".java":  "java",
@@ -68,7 +78,7 @@ func DetectLanguage(filePath string) string {
 		".sass":  "sass",
 		".less":  "less",
 		".xml":   "xml",
-		".json":  "json",
+		".json":  LanguageJSON,
 		".yaml":  "yaml",
 		".yml":   "yaml",
 		".toml":  "toml",
@@ -99,7 +109,7 @@ func DetectLanguage(filePath string) string {
 		return lang
 	}
 
-	return "text"
+	return FileTypeText
 }
 
 // DetectFileType determines the general file type
@@ -107,14 +117,14 @@ func DetectFileType(filePath string) string {
 	language := DetectLanguage(filePath)
 
 	switch language {
-	case "go", "javascript", "typescript", "python", "java", "kotlin", "scala",
+	case LanguageGo, LanguageJavaScript, LanguageTypeScript, LanguagePython, "java", "kotlin", "scala",
 		"c", "cpp", "csharp", "fsharp", "ruby", "php", "rust", "swift",
 		"objective-c", "dart", "r", "perl", "haskell", "ocaml", "clojure",
 		"elixir", "erlang", "nim", "zig", "vlang", "julia":
 		return "source"
 	case "html", "css", "scss", "sass", "less":
 		return "web"
-	case "json", "yaml", "toml", "ini", "config":
+	case LanguageJSON, "yaml", "toml", "ini", "config":
 		return "config"
 	case "shell", "powershell", "makefile":
 		return "script"
@@ -125,7 +135,7 @@ func DetectFileType(filePath string) string {
 	case "xml":
 		return "markup"
 	default:
-		return "text"
+		return FileTypeText
 	}
 }
 
@@ -220,7 +230,7 @@ func (pb *PayloadBuilder) extractProjectInfo(repoPath string) (ProjectInfo, erro
 
 	// Detect primary language by counting files
 	languageCounts := make(map[string]int)
-	filepath.Walk(repoPath, func(path string, fileInfo os.FileInfo, err error) error {
+	err := filepath.Walk(repoPath, func(path string, fileInfo os.FileInfo, err error) error {
 		if err != nil || fileInfo.IsDir() {
 			return nil
 		}
@@ -232,11 +242,15 @@ func (pb *PayloadBuilder) extractProjectInfo(repoPath string) (ProjectInfo, erro
 		}
 
 		lang := DetectLanguage(path)
-		if lang != "text" {
+		if lang != FileTypeText {
 			languageCounts[lang]++
 		}
 		return nil
 	})
+	// If filepath.Walk fails, continue with empty counts
+	if err != nil {
+		languageCounts = make(map[string]int)
+	}
 
 	// Find most common language
 	maxCount := 0
@@ -288,11 +302,11 @@ func (pb *PayloadBuilder) detectBuildTool(repoPath string) string {
 // detectFramework detects the framework used based on language and files
 func (pb *PayloadBuilder) detectFramework(repoPath, language string) string {
 	switch language {
-	case "javascript", "typescript":
+	case LanguageJavaScript, LanguageTypeScript:
 		return pb.detectJSFramework(repoPath)
-	case "python":
+	case LanguagePython:
 		return pb.detectPythonFramework(repoPath)
-	case "go":
+	case LanguageGo:
 		return pb.detectGoFramework(repoPath)
 	case "java":
 		return pb.detectJavaFramework(repoPath)
@@ -411,9 +425,17 @@ func (pb *PayloadBuilder) findConfigFiles(repoPath string) []string {
 	}
 
 	for _, pattern := range configPatterns {
-		matches, _ := filepath.Glob(filepath.Join(repoPath, pattern))
+		matches, err := filepath.Glob(filepath.Join(repoPath, pattern))
+		if err != nil {
+			// If glob pattern fails, skip this pattern
+			continue
+		}
 		for _, match := range matches {
-			relPath, _ := filepath.Rel(repoPath, match)
+			relPath, err := filepath.Rel(repoPath, match)
+			if err != nil {
+				// If we can't get relative path, use the full path
+				relPath = match
+			}
 			configFiles = append(configFiles, relPath)
 		}
 	}
@@ -479,7 +501,11 @@ func (pb *PayloadBuilder) hasAssociatedTests(filePath, repoPath string) bool {
 	}
 
 	for _, pattern := range testPatterns {
-		matches, _ := filepath.Glob(filepath.Join(repoPath, dir, pattern))
+		matches, err := filepath.Glob(filepath.Join(repoPath, dir, pattern))
+		if err != nil {
+			// If glob pattern fails, skip this pattern
+			continue
+		}
 		if len(matches) > 0 {
 			return true
 		}

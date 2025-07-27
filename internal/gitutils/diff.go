@@ -85,89 +85,155 @@ func parseDiffOutput(output string) ([]DiffFile, error) {
 	var currentFile *DiffFile
 	var currentHunk *DiffHunk
 
-	// Regex patterns for diff parsing
-	fileHeaderRegex := regexp.MustCompile(`^diff --git a/(.+) b/(.+)$`)
-	oldFileRegex := regexp.MustCompile(`^--- (.+)$`)
-	newFileRegex := regexp.MustCompile(`^\+\+\+ (.+)$`)
-	hunkHeaderRegex := regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$`)
+	parser := &diffParser{
+		fileHeaderRegex: regexp.MustCompile(`^diff --git a/(.+) b/(.+)$`),
+		oldFileRegex:    regexp.MustCompile(`^--- (.+)$`),
+		newFileRegex:    regexp.MustCompile(`^\+\+\+ (.+)$`),
+		hunkHeaderRegex: regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$`),
+	}
 
 	for _, line := range lines {
-		// Check for file header
-		if matches := fileHeaderRegex.FindStringSubmatch(line); matches != nil {
-			// Save previous file if exists
-			if currentFile != nil {
-				files = append(files, *currentFile)
-			}
-
-			// Start new file
-			currentFile = &DiffFile{
-				OldPath: matches[1],
-				NewPath: matches[2],
-			}
-			currentHunk = nil
-			continue
-		}
-
-		// Check for old file path
-		if matches := oldFileRegex.FindStringSubmatch(line); matches != nil {
-			if currentFile != nil {
-				currentFile.OldPath = matches[1]
-			}
-			continue
-		}
-
-		// Check for new file path
-		if matches := newFileRegex.FindStringSubmatch(line); matches != nil {
-			if currentFile != nil {
-				currentFile.NewPath = matches[1]
-			}
-			continue
-		}
-
-		// Check for hunk header
-		if matches := hunkHeaderRegex.FindStringSubmatch(line); matches != nil {
-			// Save previous hunk if exists
-			if currentHunk != nil && currentFile != nil {
-				currentFile.Hunks = append(currentFile.Hunks, *currentHunk)
-			}
-
-			// Parse hunk header
-			oldStart, _ := strconv.Atoi(matches[1])
-			oldLines := 1
-			if matches[2] != "" {
-				oldLines, _ = strconv.Atoi(matches[2])
-			}
-			newStart, _ := strconv.Atoi(matches[3])
-			newLines := 1
-			if matches[4] != "" {
-				newLines, _ = strconv.Atoi(matches[4])
-			}
-
-			currentHunk = &DiffHunk{
-				OldStart: oldStart,
-				OldLines: oldLines,
-				NewStart: newStart,
-				NewLines: newLines,
-				Header:   strings.TrimSpace(matches[5]),
-			}
-			continue
-		}
-
-		// Add line to current hunk
-		if currentHunk != nil {
-			currentHunk.Lines = append(currentHunk.Lines, line)
+		var err error
+		currentFile, currentHunk, err = parser.parseLine(line, currentFile, currentHunk, &files)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	// Save last hunk and file
+	finalizeCurrentItems(currentFile, currentHunk, &files)
+
+	return files, nil
+}
+
+// diffParser contains regex patterns and logic for parsing diff output
+type diffParser struct {
+	fileHeaderRegex *regexp.Regexp
+	oldFileRegex    *regexp.Regexp
+	newFileRegex    *regexp.Regexp
+	hunkHeaderRegex *regexp.Regexp
+}
+
+// parseLine processes a single line of diff output
+func (p *diffParser) parseLine(line string, currentFile *DiffFile, currentHunk *DiffHunk, files *[]DiffFile) (*DiffFile, *DiffHunk, error) {
+	// Check for file header
+	if matches := p.fileHeaderRegex.FindStringSubmatch(line); matches != nil {
+		return p.handleFileHeader(matches, currentFile, files), nil, nil
+	}
+
+	// Check for old file path
+	if matches := p.oldFileRegex.FindStringSubmatch(line); matches != nil {
+		p.handleOldFilePath(matches, currentFile)
+		return currentFile, currentHunk, nil
+	}
+
+	// Check for new file path
+	if matches := p.newFileRegex.FindStringSubmatch(line); matches != nil {
+		p.handleNewFilePath(matches, currentFile)
+		return currentFile, currentHunk, nil
+	}
+
+	// Check for hunk header
+	if matches := p.hunkHeaderRegex.FindStringSubmatch(line); matches != nil {
+		newHunk, err := p.handleHunkHeader(matches, currentFile, currentHunk)
+		return currentFile, newHunk, err
+	}
+
+	// Add line to current hunk
+	if currentHunk != nil {
+		currentHunk.Lines = append(currentHunk.Lines, line)
+	}
+
+	return currentFile, currentHunk, nil
+}
+
+// handleFileHeader processes a file header line
+func (p *diffParser) handleFileHeader(matches []string, currentFile *DiffFile, files *[]DiffFile) *DiffFile {
+	// Save previous file if exists
+	if currentFile != nil {
+		*files = append(*files, *currentFile)
+	}
+
+	// Start new file
+	return &DiffFile{
+		OldPath: matches[1],
+		NewPath: matches[2],
+	}
+}
+
+// handleOldFilePath processes an old file path line
+func (p *diffParser) handleOldFilePath(matches []string, currentFile *DiffFile) {
+	if currentFile != nil {
+		currentFile.OldPath = matches[1]
+	}
+}
+
+// handleNewFilePath processes a new file path line
+func (p *diffParser) handleNewFilePath(matches []string, currentFile *DiffFile) {
+	if currentFile != nil {
+		currentFile.NewPath = matches[1]
+	}
+}
+
+// handleHunkHeader processes a hunk header line
+func (p *diffParser) handleHunkHeader(matches []string, currentFile *DiffFile, currentHunk *DiffHunk) (*DiffHunk, error) {
+	// Save previous hunk if exists
+	if currentHunk != nil && currentFile != nil {
+		currentFile.Hunks = append(currentFile.Hunks, *currentHunk)
+	}
+
+	// Parse hunk header numbers
+	oldStart, oldLines, newStart, newLines, err := parseHunkNumbers(matches)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DiffHunk{
+		OldStart: oldStart,
+		OldLines: oldLines,
+		NewStart: newStart,
+		NewLines: newLines,
+		Header:   strings.TrimSpace(matches[5]),
+	}, nil
+}
+
+// parseHunkNumbers extracts and validates numbers from hunk header matches
+func parseHunkNumbers(matches []string) (oldStart, oldLines, newStart, newLines int, err error) {
+	oldStart, err = strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("invalid old start line number: %w", err)
+	}
+
+	oldLines = 1
+	if matches[2] != "" {
+		if ol, parseErr := strconv.Atoi(matches[2]); parseErr == nil {
+			oldLines = ol
+		}
+	}
+
+	newStart, err = strconv.Atoi(matches[3])
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("invalid new start line number: %w", err)
+	}
+
+	newLines = 1
+	if matches[4] != "" {
+		if nl, parseErr := strconv.Atoi(matches[4]); parseErr == nil {
+			newLines = nl
+		}
+	}
+
+	return oldStart, oldLines, newStart, newLines, nil
+}
+
+// finalizeCurrentItems saves the last hunk and file
+func finalizeCurrentItems(currentFile *DiffFile, currentHunk *DiffHunk, files *[]DiffFile) {
 	if currentHunk != nil && currentFile != nil {
 		currentFile.Hunks = append(currentFile.Hunks, *currentHunk)
 	}
 	if currentFile != nil {
-		files = append(files, *currentFile)
+		*files = append(*files, *currentFile)
 	}
-
-	return files, nil
 }
 
 // GetFileAtRevision retrieves file content at a specific git revision

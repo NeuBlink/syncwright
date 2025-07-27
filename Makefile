@@ -11,9 +11,13 @@ DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 BUILD_FLAGS := -trimpath
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-# Build the binary
+# Build the binary (with platform-specific executable extension)
 build: bin
-	go build $(BUILD_FLAGS) -ldflags "$(LDFLAGS)" -o bin/syncwright ./cmd/syncwright
+	@if [ "$$(go env GOOS)" = "windows" ]; then \
+		go build $(BUILD_FLAGS) -ldflags "$(LDFLAGS)" -o bin/syncwright.exe ./cmd/syncwright; \
+	else \
+		go build $(BUILD_FLAGS) -ldflags "$(LDFLAGS)" -o bin/syncwright ./cmd/syncwright; \
+	fi
 
 # Build for multiple platforms (used by GoReleaser)
 build-all: clean
