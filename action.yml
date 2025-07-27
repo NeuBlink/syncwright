@@ -26,6 +26,11 @@ inputs:
     description: 'Maximum tokens for AI processing (-1 for unlimited, recommended for complex conflicts)'
     required: false
     default: '-1'
+  # Feature branch: Add debug mode support
+  debug_mode:
+    description: 'Enable detailed debug logging for troubleshooting conflict resolution'
+    required: false
+    default: 'false'
   claude_code_oauth_token:
     description: 'Claude Code OAuth token for AI-powered conflict resolution (store as repository secret)'
     required: false
