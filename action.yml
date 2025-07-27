@@ -26,6 +26,11 @@ inputs:
     description: 'Maximum tokens for AI processing (-1 for unlimited, recommended for complex conflicts)'
     required: false
     default: '-1'
+  # Main branch: Add retry mechanism support  
+  retry_count:
+    description: 'Number of retry attempts for failed conflict resolutions'
+    required: false
+    default: '3'
   claude_code_oauth_token:
     description: 'Claude Code OAuth token for AI-powered conflict resolution (store as repository secret)'
     required: false
