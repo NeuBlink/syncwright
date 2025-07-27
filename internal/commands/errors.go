@@ -139,7 +139,7 @@ func NewValidationError(message, details string) *SyncwrightError {
 // NewAuthenticationError creates a new authentication-related error
 func NewAuthenticationError(message, details string) *SyncwrightError {
 	suggestions := []string{
-		"Set CLAUDE_API_KEY environment variable",
+		"Set CLAUDE_CODE_OAUTH_TOKEN environment variable",
 		"Use --api-key flag to provide API key",
 		"Verify the API key is valid and active",
 	}

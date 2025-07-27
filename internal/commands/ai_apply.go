@@ -158,9 +158,9 @@ func (a *AIApplyCommand) prepareInput(result *AIApplyResult) (*payload.ConflictP
 
 	// Validate API key
 	if a.options.APIKey == "" {
-		a.options.APIKey = os.Getenv("CLAUDE_API_KEY")
+		a.options.APIKey = os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
 		if a.options.APIKey == "" {
-			result.ErrorMessage = "API key not provided. Set CLAUDE_API_KEY environment variable or use --api-key flag"
+			result.ErrorMessage = "API key not provided. Set CLAUDE_CODE_OAUTH_TOKEN environment variable or use --api-key flag"
 			return nil, fmt.Errorf("missing API key")
 		}
 	}

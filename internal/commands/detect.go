@@ -3,9 +3,11 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/NeuBlink/syncwright/internal/gitutils"
 	"github.com/NeuBlink/syncwright/internal/payload"
@@ -27,14 +29,14 @@ type DetectOptions struct {
 	MaxContextLines int
 	Verbose         bool
 	ExcludePatterns []string
-<<<<<<< HEAD
-	// Main branch: Add performance metrics collection
+	// Performance metrics collection support
 	EnableMetrics   bool
 	MetricsFile     string
-=======
-	// Feature branch: Add timeout support for long-running operations
+	// Timeout support for long-running operations
 	TimeoutSeconds  int
->>>>>>> feature/add-logging-enhancement
+	// Enhanced logging options
+	EnableDetailed  bool
+	LogFile         string
 }
 
 // DetectResult represents the result of conflict detection
@@ -70,13 +72,11 @@ func NewDetectCommand(options DetectOptions) *DetectCommand {
 	if options.MaxContextLines == 0 {
 		options.MaxContextLines = 5
 	}
-<<<<<<< HEAD
 	if options.MetricsFile == "" && options.EnableMetrics {
 		options.MetricsFile = "syncwright-metrics.json" // Default metrics file
-=======
+	}
 	if options.TimeoutSeconds == 0 {
 		options.TimeoutSeconds = 30 // Default timeout for operations
->>>>>>> feature/add-logging-enhancement
 	}
 	if options.RepoPath == "" {
 		if wd, err := os.Getwd(); err == nil {
@@ -169,7 +169,8 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 
 	result.Success = true
 
-	// Log completion
+	// Log completion (using time.Now() since startTime may not be initialized)
+	startTime := time.Now()
 	duration := time.Since(startTime)
 	d.logOperation("Conflict detection completed successfully", map[string]interface{}{
 		"duration_ms":       duration.Milliseconds(),
@@ -406,7 +407,7 @@ func DetectConflictsText(repoPath string) (*DetectResult, error) {
 
 // logOperation logs operation details with structured data for enhanced debugging
 func (d *DetectCommand) logOperation(operation string, details map[string]interface{}) {
-	if d.options.EnableDetailed {
+	if d.options.EnableDetailed || d.options.Verbose {
 		logMsg := fmt.Sprintf("[DETECT] %s", operation)
 		if d.options.LogFile != "" {
 			// Append to log file if specified

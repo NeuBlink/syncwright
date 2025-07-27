@@ -1,0 +1,36 @@
+# Syncwright Enhanced Logging Configuration
+# This configuration enables detailed operation logging for debugging and monitoring
+
+logging:
+  # Enable detailed logging for all operations
+  detailed_enabled: true
+  
+  # Default log file location (can be overridden by command line)
+  default_log_file: "/tmp/syncwright-operations.log"
+  
+  # Log levels and formats
+  levels:
+    debug: true
+    info: true
+    warning: true
+    error: true
+  
+  # Components to log
+  components:
+    detect: true
+    ai_apply: true
+    validate: true
+    format: true
+    gitutils: true
+  
+  # Performance monitoring
+  performance:
+    track_duration: true
+    track_memory: false
+    track_file_stats: true
+  
+  # Output formatting
+  format:
+    timestamp: true
+    structured: true
+    include_context: true
