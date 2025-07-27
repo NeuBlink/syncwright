@@ -27,6 +27,9 @@ type DetectOptions struct {
 	MaxContextLines int
 	Verbose         bool
 	ExcludePatterns []string
+	// Main branch: Add performance metrics collection
+	EnableMetrics   bool
+	MetricsFile     string
 }
 
 // DetectResult represents the result of conflict detection
@@ -61,6 +64,9 @@ func NewDetectCommand(options DetectOptions) *DetectCommand {
 	}
 	if options.MaxContextLines == 0 {
 		options.MaxContextLines = 5
+	}
+	if options.MetricsFile == "" && options.EnableMetrics {
+		options.MetricsFile = "syncwright-metrics.json" // Default metrics file
 	}
 	if options.RepoPath == "" {
 		if wd, err := os.Getwd(); err == nil {
@@ -152,6 +158,15 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 	}
 
 	result.Success = true
+
+	// Log completion
+	duration := time.Since(startTime)
+	d.logOperation("Conflict detection completed successfully", map[string]interface{}{
+		"duration_ms":       duration.Milliseconds(),
+		"total_files":       result.Summary.TotalFiles,
+		"total_conflicts":   result.Summary.TotalConflicts,
+		"processable_files": result.Summary.ProcessableFiles,
+	})
 
 	// Output results
 	if err := d.outputResults(result); err != nil {
@@ -377,4 +392,22 @@ func DetectConflictsText(repoPath string) (*DetectResult, error) {
 
 	cmd := NewDetectCommand(options)
 	return cmd.Execute()
+}
+
+// logOperation logs operation details with structured data for enhanced debugging
+func (d *DetectCommand) logOperation(operation string, details map[string]interface{}) {
+	if d.options.EnableDetailed {
+		logMsg := fmt.Sprintf("[DETECT] %s", operation)
+		if d.options.LogFile != "" {
+			// Append to log file if specified
+			if file, err := os.OpenFile(d.options.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err == nil {
+				defer file.Close()
+				logger := log.New(file, "", log.LstdFlags)
+				logger.Printf("%s - Details: %+v", logMsg, details)
+			}
+		} else if d.options.Verbose {
+			// Log to stderr when verbose mode is enabled
+			log.Printf("%s - Details: %+v", logMsg, details)
+		}
+	}
 }
