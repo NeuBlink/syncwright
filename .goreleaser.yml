@@ -15,23 +15,23 @@ builds:
   - id: syncwright
     main: ./cmd/syncwright
     binary: syncwright
-    
+
     # Target environments
     goos:
       - linux
       - darwin
       - windows
-      
+
     goarch:
       - amd64
       - arm64
       - "386"
       - arm
-      
+
     goarm:
       - "6"
       - "7"
-    
+
     # Ignore specific combinations
     ignore:
       - goos: windows
@@ -42,18 +42,18 @@ builds:
         goarch: "386"
       - goos: darwin
         goarch: arm
-        
+
     # Build flags
     flags:
       - -trimpath
-      
+
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
       - -X main.builtBy=goreleaser
-      
+
     # Environment variables for build
     env:
       - CGO_ENABLED=0
@@ -61,12 +61,12 @@ builds:
 archives:
   - id: default
     format: tar.gz
-    
+
     # Use zip for Windows
     format_overrides:
       - goos: windows
         format: zip
-        
+
     # Archive name template
     name_template: >-
       {{ .ProjectName }}_
@@ -75,13 +75,13 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
-      
+
     # Files to include in archive
     files:
       - LICENSE
       - README.md
       - USAGE.md
-      
+
     # Wrap in directory
     wrap_in_directory: false
 
@@ -96,7 +96,7 @@ changelog:
   # Changelog configuration
   sort: asc
   use: github
-  
+
   filters:
     exclude:
       - '^docs:'
@@ -108,24 +108,24 @@ changelog:
       - Merge pull request
       - Merge branch
       - go mod tidy
-      
+
   groups:
     - title: 'New Features'
       regexp: '^.*?feat(\(.+\))??!?:.+$'
       order: 0
-      
+
     - title: 'Bug Fixes'
       regexp: '^.*?fix(\(.+\))??!?:.+$'
       order: 1
-      
+
     - title: 'Performance Improvements'
       regexp: '^.*?perf(\(.+\))??!?:.+$'
       order: 2
-      
+
     - title: 'Documentation Updates'
       regexp: '^.*?docs(\(.+\))??!?:.+$'
       order: 3
-      
+
     - title: 'Other Changes'
       order: 999
 
@@ -134,62 +134,62 @@ release:
   github:
     owner: neublink
     name: syncwright
-    
+
   # Release name template
   name_template: "{{.ProjectName}} v{{.Version}}"
-  
+
   # Create release as draft initially
   draft: false
-  
+
   # Mark as prerelease if version contains alpha, beta, rc
   prerelease: auto
-  
+
   # Release mode
   mode: replace
-  
+
   # Header and footer for release notes
   header: |
     ## Syncwright {{.Tag}}
-    
+
     Welcome to this new release of Syncwright! 🎉
-    
+
     ### Installation
-    
+
     #### Download Pre-built Binaries
-    
+
     Download the appropriate binary for your platform from the assets below.
-    
+
     #### Install Script
-    
+
     ```bash
     curl -fsSL https://raw.githubusercontent.com/neublink/syncwright/main/scripts/install.sh | bash
     ```
-    
+
     #### Go Install
-    
+
     ```bash
     go install github.com/neublink/syncwright/cmd/syncwright@{{.Tag}}
     ```
-    
+
     #### GitHub Action
-    
+
     ```yaml
     - uses: neublink/syncwright@{{.Tag}}
       with:
         claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     ```
-    
+
     ---
-    
+
   footer: |
     ---
-    
+
     ### What's Next?
-    
+
     - 📖 Check out the [documentation](https://github.com/neublink/syncwright/blob/main/README.md)
     - 🐛 Report issues on [GitHub Issues](https://github.com/neublink/syncwright/issues)
     - 💬 Join the discussion in [GitHub Discussions](https://github.com/neublink/syncwright/discussions)
-    
+
     **Full Changelog**: https://github.com/neublink/syncwright/compare/{{.PreviousTag}}...{{.Tag}}
 
 # Universal Binaries for macOS
@@ -197,7 +197,7 @@ universal_binaries:
   - id: syncwright-universal
     replace: true
     name_template: 'syncwright'
-    
+
 brews:
   - name: syncwright
     repository:
@@ -205,42 +205,42 @@ brews:
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-      
+
     # Git author for commits
     commit_author:
       name: syncwright-bot
       email: syncwright-bot@users.noreply.github.com
-      
+
     # Commit message template
     commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
-    
+
     # Formula folder
     folder: Formula
-    
+
     # Caveats
     caveats: |
       Syncwright is now installed! 🎉
-      
+
       To get started:
         syncwright --help
-      
+
       For AI-powered conflict resolution, set up your Claude Code OAuth token:
         export CLAUDE_CODE_OAUTH_TOKEN="your-token-here"
-      
+
       Visit https://github.com/neublink/syncwright for documentation.
-      
+
     # Formula description
     description: "AI-powered Git merge conflict resolution tool"
     homepage: "https://github.com/neublink/syncwright"
-    
+
     # License
     license: "MIT"
-    
+
     # Dependencies
     dependencies:
       - name: git
         type: runtime
-        
+
     # Test
     test: |
       system "#{bin}/syncwright --version"
@@ -269,43 +269,43 @@ winget:
 nfpms:
   - id: packages
     package_name: syncwright
-    
+
     # Vendor
     vendor: neublink
     homepage: https://github.com/neublink/syncwright
     maintainer: Syncwright Team <syncwright@neublink.com>
-    
+
     # Description
     description: |-
       Syncwright is an AI-powered Git merge conflict resolution tool that
       automatically detects, analyzes, and resolves merge conflicts using
       advanced language models.
-      
+
     # License
     license: MIT
-    
+
     # Formats
     formats:
       - deb
       - rpm
       - apk
-      
+
     # Dependencies
     dependencies:
       - git
-      
+
     # Recommends
     recommends:
       - curl
-      
+
     # File mappings
     contents:
       - src: ./LICENSE
         dst: /usr/share/doc/syncwright/LICENSE
-        
+
       - src: ./README.md
         dst: /usr/share/doc/syncwright/README.md
-        
+
       - src: ./scripts/install.sh
         dst: /usr/share/syncwright/install.sh
         file_info:
@@ -316,21 +316,21 @@ dockers:
   - id: syncwright
     goos: linux
     goarch: amd64
-    
+
     # Image name
     image_templates:
       - "ghcr.io/neublink/syncwright:latest"
       - "ghcr.io/neublink/syncwright:v{{ .Major }}"
       - "ghcr.io/neublink/syncwright:v{{ .Major }}.{{ .Minor }}"
       - "ghcr.io/neublink/syncwright:{{ .Tag }}"
-      
+
     # Dockerfile template
     dockerfile: |
       FROM alpine:3.19
       RUN apk add --no-cache ca-certificates git curl
       COPY syncwright /usr/local/bin/
       ENTRYPOINT ["/usr/local/bin/syncwright"]
-      
+
     # Build flags
     build_flag_templates:
       - "--pull"
@@ -350,17 +350,17 @@ snapcrafts:
       Syncwright is an AI-powered Git merge conflict resolution tool that
       automatically detects, analyzes, and resolves merge conflicts using
       advanced language models.
-      
+
     # Grade and confinement
     grade: stable
     confinement: strict
-    
+
     # License
     license: MIT
-    
+
     # Base
     base: core22
-    
+
     # Apps
     apps:
       syncwright:

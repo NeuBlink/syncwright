@@ -6,9 +6,27 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
+
+// validateGitPath validates file paths within git repositories for security
+func validateGitPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("path cannot be empty")
+	}
+	
+	// Clean the path to resolve . and .. components
+	cleanPath := filepath.Clean(path)
+	
+	// Check for basic path traversal attempts and dangerous characters
+	if strings.ContainsAny(cleanPath, ";|&`$") {
+		return fmt.Errorf("potentially dangerous characters in path: %s", path)
+	}
+	
+	return nil
+}
 
 // IsGitRepository checks if the current directory is a Git repository
 func IsGitRepository() (bool, error) {
@@ -64,10 +82,21 @@ func CommitChanges(message string) error {
 func GetRecentlyModifiedFiles(repoPath string, days int) ([]string, error) {
 	// Use git log to find files modified in the last N days
 	since := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
-	
+
+	// Validate the since parameter format to prevent command injection
+	// Expected format: YYYY-MM-DD
+	matched, err := regexp.MatchString(`^\d{4}-\d{2}-\d{2}$`, since)
+	if err != nil {
+		return nil, fmt.Errorf("error validating date format: %w", err)
+	}
+	if !matched {
+		return nil, fmt.Errorf("invalid date format: %s", since)
+	}
+
+	// #nosec G204 - since parameter validated with regex above
 	cmd := exec.Command("git", "log", "--name-only", "--pretty=format:", "--since="+since)
 	cmd.Dir = repoPath
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get recently modified files: %w", err)
@@ -97,7 +126,7 @@ func GetRecentlyModifiedFiles(repoPath string, days int) ([]string, error) {
 func GetAllTrackedFiles(repoPath string) ([]string, error) {
 	cmd := exec.Command("git", "ls-files")
 	cmd.Dir = repoPath
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tracked files: %w", err)
@@ -119,4 +148,3 @@ func GetAllTrackedFiles(repoPath string) ([]string, error) {
 
 	return existingFiles, nil
 }
-

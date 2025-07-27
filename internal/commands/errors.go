@@ -3,6 +3,9 @@ package commands
 import (
 	"fmt"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // ErrorType represents different types of errors that can occur
@@ -75,7 +78,7 @@ func NewPayloadError(message, details string, recoverable bool) *SyncwrightError
 // NewAPIError creates a new API-related error
 func NewAPIError(message, details string, statusCode int) *SyncwrightError {
 	suggestions := []string{}
-	
+
 	switch statusCode {
 	case 401:
 		suggestions = append(suggestions, "Check your API key")
@@ -90,7 +93,7 @@ func NewAPIError(message, details string, statusCode int) *SyncwrightError {
 		suggestions = append(suggestions, "Retry the request")
 		suggestions = append(suggestions, "Check API status page")
 	}
-	
+
 	return &SyncwrightError{
 		Type:        ErrorTypeAPI,
 		Message:     message,
@@ -103,7 +106,7 @@ func NewAPIError(message, details string, statusCode int) *SyncwrightError {
 // NewFileSystemError creates a new filesystem-related error
 func NewFileSystemError(message, details, filePath string) *SyncwrightError {
 	suggestions := []string{}
-	
+
 	if strings.Contains(strings.ToLower(message), "permission") {
 		suggestions = append(suggestions, "Check file permissions")
 		suggestions = append(suggestions, "Ensure you have write access to the repository")
@@ -112,7 +115,7 @@ func NewFileSystemError(message, details, filePath string) *SyncwrightError {
 		suggestions = append(suggestions, "Verify the file path exists")
 		suggestions = append(suggestions, "Check if the file was moved or deleted")
 	}
-	
+
 	return &SyncwrightError{
 		Type:        ErrorTypeFileSystem,
 		Message:     message,
@@ -140,7 +143,7 @@ func NewAuthenticationError(message, details string) *SyncwrightError {
 		"Use --api-key flag to provide API key",
 		"Verify the API key is valid and active",
 	}
-	
+
 	return &SyncwrightError{
 		Type:        ErrorTypeAuthentication,
 		Message:     message,
@@ -158,7 +161,7 @@ func NewNetworkError(message, details string) *SyncwrightError {
 		"Try again in a few moments",
 		"Check if the API endpoint is accessible",
 	}
-	
+
 	return &SyncwrightError{
 		Type:        ErrorTypeNetwork,
 		Message:     message,
@@ -193,12 +196,12 @@ func (eh *ErrorHandler) Handle(err error) string {
 	if err == nil {
 		return ""
 	}
-	
+
 	// Check if it's a SyncwrightError
 	if syncErr, ok := err.(*SyncwrightError); ok {
 		return eh.formatSyncwrightError(syncErr)
 	}
-	
+
 	// Handle standard errors
 	return eh.formatStandardError(err)
 }
@@ -206,16 +209,17 @@ func (eh *ErrorHandler) Handle(err error) string {
 // formatSyncwrightError formats a SyncwrightError for display
 func (eh *ErrorHandler) formatSyncwrightError(err *SyncwrightError) string {
 	var builder strings.Builder
-	
+
 	// Error header
-	builder.WriteString(fmt.Sprintf("❌ %s Error: %s\n", 
-		strings.Title(string(err.Type)), err.Message))
-	
+	titleCaser := cases.Title(language.English)
+	builder.WriteString(fmt.Sprintf("❌ %s Error: %s\n",
+		titleCaser.String(string(err.Type)), err.Message))
+
 	// Details
 	if err.Details != "" {
 		builder.WriteString(fmt.Sprintf("   Details: %s\n", err.Details))
 	}
-	
+
 	// File context
 	if err.FilePath != "" {
 		if err.LineNumber > 0 {
@@ -224,7 +228,7 @@ func (eh *ErrorHandler) formatSyncwrightError(err *SyncwrightError) string {
 			builder.WriteString(fmt.Sprintf("   File: %s\n", err.FilePath))
 		}
 	}
-	
+
 	// Suggestions
 	if len(err.Suggestions) > 0 {
 		builder.WriteString("\n💡 Suggestions:\n")
@@ -232,48 +236,48 @@ func (eh *ErrorHandler) formatSyncwrightError(err *SyncwrightError) string {
 			builder.WriteString(fmt.Sprintf("   • %s\n", suggestion))
 		}
 	}
-	
+
 	// Recovery info
 	if err.Recoverable {
 		builder.WriteString("\n🔄 This error may be recoverable. Please try the suggestions above.\n")
 	}
-	
+
 	return builder.String()
 }
 
 // formatStandardError formats a standard error for display
 func (eh *ErrorHandler) formatStandardError(err error) string {
 	message := err.Error()
-	
+
 	// Try to classify the error and provide suggestions
 	suggestions := []string{}
-	
+
 	if strings.Contains(strings.ToLower(message), "permission denied") {
 		suggestions = append(suggestions, "Check file permissions")
 		suggestions = append(suggestions, "Run with appropriate privileges")
 	}
-	
-	if strings.Contains(strings.ToLower(message), "network") || 
-	   strings.Contains(strings.ToLower(message), "connection") {
+
+	if strings.Contains(strings.ToLower(message), "network") ||
+		strings.Contains(strings.ToLower(message), "connection") {
 		suggestions = append(suggestions, "Check internet connection")
 		suggestions = append(suggestions, "Verify network settings")
 	}
-	
+
 	if strings.Contains(strings.ToLower(message), "not found") {
 		suggestions = append(suggestions, "Verify the path exists")
 		suggestions = append(suggestions, "Check spelling and case sensitivity")
 	}
-	
+
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("❌ Error: %s\n", message))
-	
+
 	if len(suggestions) > 0 {
 		builder.WriteString("\n💡 Suggestions:\n")
 		for _, suggestion := range suggestions {
 			builder.WriteString(fmt.Sprintf("   • %s\n", suggestion))
 		}
 	}
-	
+
 	return builder.String()
 }
 
@@ -308,7 +312,7 @@ func ShouldRetry(err error, attempt int, maxAttempts int) bool {
 	if attempt >= maxAttempts {
 		return false
 	}
-	
+
 	if syncErr, ok := err.(*SyncwrightError); ok {
 		switch syncErr.Type {
 		case ErrorTypeNetwork, ErrorTypeAPI:
@@ -319,14 +323,14 @@ func ShouldRetry(err error, attempt int, maxAttempts int) bool {
 			return syncErr.Recoverable
 		}
 	}
-	
+
 	// For standard errors, retry on network/temporary issues
 	message := strings.ToLower(err.Error())
 	if strings.Contains(message, "timeout") ||
-	   strings.Contains(message, "connection") ||
-	   strings.Contains(message, "temporary") {
+		strings.Contains(message, "connection") ||
+		strings.Contains(message, "temporary") {
 		return true
 	}
-	
+
 	return false
 }

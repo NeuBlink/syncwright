@@ -1,3 +1,4 @@
+---
 name: Syncwright Reusable Workflow
 
 on:
@@ -30,7 +31,7 @@ concurrency:
 jobs:
   syncwright:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -59,11 +60,11 @@ jobs:
             # Fetch latest changes
             git fetch origin ${{ steps.pr-details.outputs.base_branch }}
             git fetch origin ${{ steps.pr-details.outputs.head_branch }}
-            
+
             # Switch to base branch and try merge
             git checkout origin/${{ steps.pr-details.outputs.base_branch }}
             git checkout -b temp-merge-branch
-            
+
             # Attempt merge
             if git merge origin/${{ steps.pr-details.outputs.head_branch }} --no-edit; then
               echo "merge_successful=true" >> $GITHUB_OUTPUT
@@ -99,13 +100,13 @@ jobs:
               repo: context.repo.repo,
               pull_number: ${{ steps.pr-details.outputs.pr_number }}
             });
-            
+
             const mergeSuccessful = '${{ steps.merge-attempt.outputs.merge_successful }}' === 'true';
             const workflowStatus = '${{ job.status }}';
-            
+
             let labels = [];
             let comment = '';
-            
+
             if (mergeSuccessful && workflowStatus === 'success') {
               labels = ['syncwright:auto-merged'];
               comment = '✅ **Syncwright**: Automatic merge completed successfully without conflicts.';
@@ -116,7 +117,7 @@ jobs:
               labels = ['syncwright:failed'];
               comment = '❌ **Syncwright**: Workflow failed. Please check the logs for details.';
             }
-            
+
             // Add labels
             for (const label of labels) {
               try {
@@ -130,19 +131,19 @@ jobs:
                 console.log(`Warning: Could not add label ${label}: ${error.message}`);
               }
             }
-            
+
             // Post/update sticky comment
             const comments = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: ${{ steps.pr-details.outputs.pr_number }}
             });
-            
-            const existingComment = comments.data.find(c => 
-              c.user.login === 'github-actions[bot]' && 
+
+            const existingComment = comments.data.find(c =>
+              c.user.login === 'github-actions[bot]' &&
               c.body.includes('**Syncwright**')
             );
-            
+
             if (existingComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,

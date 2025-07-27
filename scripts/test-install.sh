@@ -8,7 +8,7 @@ set -euo pipefail
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
+# YELLOW='\033[1;33m'  # Currently unused
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
@@ -30,6 +30,7 @@ INSTALL_SCRIPT="$SCRIPT_DIR/install.sh"
 TEST_DIR=$(mktemp -d)
 
 cleanup() {
+    # shellcheck disable=SC2317  # Function is called by trap
     if [ -d "$TEST_DIR" ]; then
         rm -rf "$TEST_DIR"
     fi

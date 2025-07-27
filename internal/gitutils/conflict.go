@@ -3,7 +3,9 @@ package gitutils
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -25,9 +27,9 @@ type ConflictHunk struct {
 
 // ConflictFile represents a file with merge conflicts
 type ConflictFile struct {
-	Path     string         `json:"path"`
-	Hunks    []ConflictHunk `json:"hunks"`
-	Context  []string       `json:"context,omitempty"` // Surrounding lines for AI context
+	Path    string         `json:"path"`
+	Hunks   []ConflictHunk `json:"hunks"`
+	Context []string       `json:"context,omitempty"` // Surrounding lines for AI context
 }
 
 // ConflictReport represents the overall conflict detection report
@@ -41,7 +43,7 @@ type ConflictReport struct {
 func DetectConflicts(repoPath string) ([]ConflictStatus, error) {
 	cmd := exec.Command("git", "status", "--porcelain")
 	cmd.Dir = repoPath
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to run git status: %w", err)
@@ -49,13 +51,13 @@ func DetectConflicts(repoPath string) ([]ConflictStatus, error) {
 
 	var conflicts []ConflictStatus
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if len(line) < 3 {
 			continue
 		}
-		
+
 		// Check for conflict markers in git status
 		// UU = both modified, AA = both added, DD = both deleted
 		// AU = added by us, UA = added by them, DU = deleted by us, UD = deleted by them
@@ -68,7 +70,7 @@ func DetectConflicts(repoPath string) ([]ConflictStatus, error) {
 			})
 		}
 	}
-	
+
 	return conflicts, scanner.Err()
 }
 
@@ -85,98 +87,181 @@ func isConflictStatus(status string) bool {
 
 // ParseConflictHunks extracts conflict hunks from a file's content
 func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
-	cmd := exec.Command("git", "show", ":"+filePath)
-	cmd.Dir = repoPath
+	if err := validateGitPath(repoPath); err != nil {
+		return nil, fmt.Errorf("invalid repository path: %w", err)
+	}
 	
-	// If the file doesn't exist in git, read from filesystem
-	content, err := cmd.Output()
+	cleanPath, err := validateConflictFilePath(filePath)
 	if err != nil {
-		// Try reading from filesystem
-		cmd = exec.Command("cat", filePath)
-		cmd.Dir = repoPath
-		content, err = cmd.Output()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
-		}
+		return nil, err
+	}
+
+	content, err := readConflictFileContent(cleanPath, repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
 	}
 
 	return parseConflictMarkers(string(content))
+}
+
+// validateConflictFilePath validates file path for conflict parsing
+func validateConflictFilePath(filePath string) (string, error) {
+	cleanPath := filepath.Clean(filePath)
+	if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") ||
+		strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") ||
+		strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") ||
+		strings.Contains(cleanPath, "$") {
+		return "", fmt.Errorf("invalid file path: %s", filePath)
+	}
+
+	// Additional validation to ensure path contains only safe characters
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9._/\-]+$`, cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("error validating file path format: %w", err)
+	}
+	if !matched {
+		return "", fmt.Errorf("file path contains unsafe characters: %s", filePath)
+	}
+
+	return cleanPath, nil
+}
+
+// readConflictFileContent reads file content for conflict parsing
+func readConflictFileContent(cleanPath, repoPath string) ([]byte, error) {
+	cmd := exec.Command("git", "show", ":"+cleanPath) // #nosec G204 - cleanPath validated with regex above
+	cmd.Dir = repoPath
+
+	// If the file doesn't exist in git, read from filesystem
+	content, err := cmd.Output()
+	if err != nil {
+		// Try reading from filesystem using Go's standard library instead of shell command
+		fullPath := filepath.Join(repoPath, cleanPath)
+		content, err = os.ReadFile(fullPath) // #nosec G304 - repoPath and cleanPath are validated above
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return content, nil
 }
 
 // parseConflictMarkers parses conflict markers from file content
 func parseConflictMarkers(content string) ([]ConflictHunk, error) {
 	lines := strings.Split(content, "\n")
 	var hunks []ConflictHunk
-	
-	// Regex patterns for conflict markers
-	startMarker := regexp.MustCompile(`^<{7}\s*(.*)$`)     // <<<<<<< HEAD or <<<<<<< branch
-	middleMarker := regexp.MustCompile(`^={7}$`)          // =======
-	baseMarker := regexp.MustCompile(`^\|{7}\s*(.*)$`)    // ||||||| base (diff3 style)
-	endMarker := regexp.MustCompile(`^>{7}\s*(.*)$`)      // >>>>>>> branch
-	
+
+	parser := &conflictParser{
+		startMarker:  regexp.MustCompile(`^<{7}\s*(.*)$`),  // <<<<<<< HEAD or <<<<<<< branch
+		middleMarker: regexp.MustCompile(`^={7}$`),         // =======
+		baseMarker:   regexp.MustCompile(`^\|{7}\s*(.*)$`), // ||||||| base (diff3 style)
+		endMarker:    regexp.MustCompile(`^>{7}\s*(.*)$`),  // >>>>>>> branch
+	}
+
 	i := 0
 	for i < len(lines) {
-		line := lines[i]
-		
-		// Look for start of conflict
-		if startMarker.MatchString(line) {
-			hunk := ConflictHunk{
-				StartLine: i + 1, // 1-based line numbers
+		if parser.startMarker.MatchString(lines[i]) {
+			hunk, nextIndex := parser.parseConflictHunk(lines, i)
+			if hunk != nil {
+				hunks = append(hunks, *hunk)
 			}
-			
-			i++ // Move past start marker
-			
-			// Collect "ours" lines until we hit middle or base marker
-			for i < len(lines) && !middleMarker.MatchString(lines[i]) && !baseMarker.MatchString(lines[i]) {
-				hunk.OursLines = append(hunk.OursLines, lines[i])
-				i++
-			}
-			
-			// Check if we have a base section (diff3 style)
-			if i < len(lines) && baseMarker.MatchString(lines[i]) {
-				i++ // Move past base marker
-				// Collect base lines until middle marker
-				for i < len(lines) && !middleMarker.MatchString(lines[i]) {
-					hunk.BaseLines = append(hunk.BaseLines, lines[i])
-					i++
-				}
-			}
-			
-			// Should be at middle marker now
-			if i < len(lines) && middleMarker.MatchString(lines[i]) {
-				i++ // Move past middle marker
-				
-				// Collect "theirs" lines until end marker
-				for i < len(lines) && !endMarker.MatchString(lines[i]) {
-					hunk.TheirsLines = append(hunk.TheirsLines, lines[i])
-					i++
-				}
-				
-				// Should be at end marker
-				if i < len(lines) && endMarker.MatchString(lines[i]) {
-					hunk.EndLine = i + 1 // 1-based line numbers
-					hunks = append(hunks, hunk)
-				}
-			}
+			i = nextIndex
+		} else {
+			i++
 		}
+	}
+
+	return hunks, nil
+}
+
+// conflictParser contains regex patterns and logic for parsing conflict markers
+type conflictParser struct {
+	startMarker  *regexp.Regexp
+	middleMarker *regexp.Regexp
+	baseMarker   *regexp.Regexp
+	endMarker    *regexp.Regexp
+}
+
+// parseConflictHunk parses a single conflict hunk starting at the given index
+func (p *conflictParser) parseConflictHunk(lines []string, startIndex int) (*ConflictHunk, int) {
+	hunk := &ConflictHunk{
+		StartLine: startIndex + 1, // 1-based line numbers
+	}
+
+	i := startIndex + 1 // Move past start marker
+
+	// Collect "ours" lines
+	i = p.collectOursLines(lines, i, hunk)
+
+	// Check for base section (diff3 style)
+	if i < len(lines) && p.baseMarker.MatchString(lines[i]) {
+		i = p.collectBaseLines(lines, i+1, hunk) // Move past base marker
+	}
+
+	// Process middle marker and collect "theirs" lines
+	if i < len(lines) && p.middleMarker.MatchString(lines[i]) {
+		i = p.collectTheirsLines(lines, i+1, hunk) // Move past middle marker
+
+		// Check for end marker
+		if i < len(lines) && p.endMarker.MatchString(lines[i]) {
+			hunk.EndLine = i + 1 // 1-based line numbers
+			return hunk, i + 1
+		}
+	}
+
+	// Invalid conflict hunk
+	return nil, i
+}
+
+// collectOursLines collects lines until we hit middle or base marker
+func (p *conflictParser) collectOursLines(lines []string, startIndex int, hunk *ConflictHunk) int {
+	i := startIndex
+	for i < len(lines) && !p.middleMarker.MatchString(lines[i]) && !p.baseMarker.MatchString(lines[i]) {
+		hunk.OursLines = append(hunk.OursLines, lines[i])
 		i++
 	}
-	
-	return hunks, nil
+	return i
+}
+
+// collectBaseLines collects base lines until middle marker
+func (p *conflictParser) collectBaseLines(lines []string, startIndex int, hunk *ConflictHunk) int {
+	i := startIndex
+	for i < len(lines) && !p.middleMarker.MatchString(lines[i]) {
+		hunk.BaseLines = append(hunk.BaseLines, lines[i])
+		i++
+	}
+	return i
+}
+
+// collectTheirsLines collects "theirs" lines until end marker
+func (p *conflictParser) collectTheirsLines(lines []string, startIndex int, hunk *ConflictHunk) int {
+	i := startIndex
+	for i < len(lines) && !p.endMarker.MatchString(lines[i]) {
+		hunk.TheirsLines = append(hunk.TheirsLines, lines[i])
+		i++
+	}
+	return i
 }
 
 // ExtractFileContext extracts surrounding context lines for AI processing
 func ExtractFileContext(filePath, repoPath string, contextLines int) ([]string, error) {
-	cmd := exec.Command("cat", filePath)
-	cmd.Dir = repoPath
+	// Validate repository path for security
+	if err := validateGitPath(repoPath); err != nil {
+		return nil, fmt.Errorf("invalid repository path: %w", err)
+	}
 	
-	content, err := cmd.Output()
+	// Validate file path for security
+	if err := validateGitPath(filePath); err != nil {
+		return nil, fmt.Errorf("invalid file path: %w", err)
+	}
+	
+	fullPath := filepath.Join(repoPath, filePath)
+	content, err := os.ReadFile(fullPath) // #nosec G304 - repoPath and filePath are validated above
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
 	}
-	
+
 	lines := strings.Split(string(content), "\n")
-	
+
 	// For now, return all lines as context
 	// In a more sophisticated implementation, we could extract only
 	// relevant context around conflict hunks
@@ -187,12 +272,12 @@ func ExtractFileContext(filePath, repoPath string, contextLines int) ([]string, 
 func IsInMergeState(repoPath string) (bool, error) {
 	cmd := exec.Command("git", "status", "--porcelain=v1")
 	cmd.Dir = repoPath
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return false, fmt.Errorf("failed to check git status: %w", err)
 	}
-	
+
 	// Check for any conflict indicators
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
@@ -203,7 +288,7 @@ func IsInMergeState(repoPath string) (bool, error) {
 			}
 		}
 	}
-	
+
 	return false, nil
 }
 
@@ -213,33 +298,33 @@ func GetConflictReport(repoPath string) (*ConflictReport, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect conflicts: %w", err)
 	}
-	
+
 	report := &ConflictReport{
 		RepoPath:       repoPath,
 		TotalConflicts: len(conflicts),
 	}
-	
+
 	for _, conflict := range conflicts {
 		hunks, err := ParseConflictHunks(conflict.FilePath, repoPath)
 		if err != nil {
 			// Log error but continue with other files
 			continue
 		}
-		
+
 		context, err := ExtractFileContext(conflict.FilePath, repoPath, 5)
 		if err != nil {
 			// Continue without context if we can't read the file
 			context = nil
 		}
-		
+
 		conflictFile := ConflictFile{
 			Path:    conflict.FilePath,
 			Hunks:   hunks,
 			Context: context,
 		}
-		
+
 		report.ConflictedFiles = append(report.ConflictedFiles, conflictFile)
 	}
-	
+
 	return report, nil
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -178,7 +179,7 @@ func getFormatterVersion(command string) string {
 	versionFlags := []string{"--version", "-version", "-V", "version"}
 
 	for _, flag := range versionFlags {
-		cmd := exec.CommandContext(ctx, command, flag)
+		cmd := exec.CommandContext(ctx, command, flag) // #nosec G204 - command is validated above
 		output, err := cmd.Output()
 		if err == nil && len(output) > 0 {
 			// Return first line of version output, trimmed
@@ -259,21 +260,39 @@ func executeFormatter(formatter Formatter, filePath string, result *FormatResult
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Build command arguments
-	args := append(formatter.Args, filePath)
+	// Validate formatter command to prevent command injection
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9_\-]+$`, formatter.Command)
+	if err != nil {
+		return fmt.Errorf("error validating formatter command: %w", err)
+	}
+	if !matched {
+		return fmt.Errorf("invalid formatter command: %s", formatter.Command)
+	}
+
+	// Validate file path to prevent command injection
+	cleanPath := filepath.Clean(filePath)
+	dangerousChars := []string{"..", ";", "&", "|", "`", "$"}
+	for _, char := range dangerousChars {
+		if strings.Contains(cleanPath, char) {
+			return fmt.Errorf("invalid file path: %s", filePath)
+		}
+	}
+
+	// Build command arguments with validated path
+	args := append(formatter.Args, cleanPath)
 
 	// Special handling for jq (JSON formatter) - needs different approach
 	if formatter.Name == "jq" {
-		return executeJQFormatter(ctx, filePath, result)
+		return executeJQFormatter(ctx, cleanPath, result)
 	}
 
-	cmd := exec.CommandContext(ctx, formatter.Command, args...)
+	cmd := exec.CommandContext(ctx, formatter.Command, args...) // #nosec G204 - formatter.Command is validated above
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 
 	// Capture output
 	result.Stdout = strings.TrimSpace(stdout.String())
@@ -289,7 +308,7 @@ func executeFormatter(formatter Formatter, filePath string, result *FormatResult
 // executeJQFormatter handles JSON formatting with jq (special case)
 func executeJQFormatter(ctx context.Context, filePath string, result *FormatResult) error {
 	// Read the file content
-	content, err := os.ReadFile(filePath)
+	content, err := os.ReadFile(filePath) // #nosec G304 - filePath is validated in calling function
 	if err != nil {
 		return fmt.Errorf("failed to read JSON file: %w", err)
 	}
@@ -315,7 +334,7 @@ func executeJQFormatter(ctx context.Context, filePath string, result *FormatResu
 	}
 
 	// Write formatted content back to file
-	if err := os.WriteFile(filePath, stdout.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(filePath, stdout.Bytes(), 0600); err != nil {
 		return fmt.Errorf("failed to write formatted JSON: %w", err)
 	}
 
@@ -504,22 +523,45 @@ func filterFormatters(formatters []Formatter, options FormatOptions) []Formatter
 }
 
 // executeFormatterWithContext runs a formatter with a custom context
-func executeFormatterWithContext(ctx context.Context, formatter Formatter, filePath string, result *FormatResult) error {
-	// Build command arguments
-	args := append(formatter.Args, filePath)
+func executeFormatterWithContext(
+	ctx context.Context, 
+	formatter Formatter, 
+	filePath string, 
+	result *FormatResult,
+) error {
+	// Validate formatter command to prevent command injection
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9_\-]+$`, formatter.Command)
+	if err != nil {
+		return fmt.Errorf("error validating formatter command: %w", err)
+	}
+	if !matched {
+		return fmt.Errorf("invalid formatter command: %s", formatter.Command)
+	}
+
+	// Validate file path to prevent command injection
+	cleanPath := filepath.Clean(filePath)
+	dangerousChars := []string{"..", ";", "&", "|", "`", "$"}
+	for _, char := range dangerousChars {
+		if strings.Contains(cleanPath, char) {
+			return fmt.Errorf("invalid file path: %s", filePath)
+		}
+	}
+
+	// Build command arguments with validated path
+	args := append(formatter.Args, cleanPath)
 
 	// Special handling for jq (JSON formatter)
 	if formatter.Name == "jq" {
-		return executeJQFormatter(ctx, filePath, result)
+		return executeJQFormatter(ctx, cleanPath, result)
 	}
 
-	cmd := exec.CommandContext(ctx, formatter.Command, args...)
+	cmd := exec.CommandContext(ctx, formatter.Command, args...) // #nosec G204 - formatter.Command is validated above
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 
 	// Capture output
 	result.Stdout = strings.TrimSpace(stdout.String())

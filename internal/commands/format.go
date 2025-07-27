@@ -8,34 +8,34 @@ import (
 	"strings"
 	"time"
 
-	"syncwright/internal/format"
-	"syncwright/internal/gitutils"
+	"github.com/NeuBlink/syncwright/internal/format"
+	"github.com/NeuBlink/syncwright/internal/gitutils"
 )
 
 // FormatOptions contains options for the format command
 type FormatOptions struct {
-	RepoPath            string        `json:"repo_path"`
-	OutputFile          string        `json:"output_file"`
-	OutputFormat        string        `json:"output_format"` // "json", "text"
-	DryRun              bool          `json:"dry_run"`
-	Verbose             bool          `json:"verbose"`
-	PreferredFormatters []string      `json:"preferred_formatters,omitempty"`
-	ExcludeFormatters   []string      `json:"exclude_formatters,omitempty"`
-	IncludeExtensions   []string      `json:"include_extensions,omitempty"`
-	ExcludeExtensions   []string      `json:"exclude_extensions,omitempty"`
-	FilePaths           []string      `json:"file_paths,omitempty"`
-	ScanRecent          bool          `json:"scan_recent"`
-	RecentDays          int           `json:"recent_days"`
+	RepoPath            string               `json:"repo_path"`
+	OutputFile          string               `json:"output_file"`
+	OutputFormat        string               `json:"output_format"` // "json", "text"
+	DryRun              bool                 `json:"dry_run"`
+	Verbose             bool                 `json:"verbose"`
+	PreferredFormatters []string             `json:"preferred_formatters,omitempty"`
+	ExcludeFormatters   []string             `json:"exclude_formatters,omitempty"`
+	IncludeExtensions   []string             `json:"include_extensions,omitempty"`
+	ExcludeExtensions   []string             `json:"exclude_extensions,omitempty"`
+	FilePaths           []string             `json:"file_paths,omitempty"`
+	ScanRecent          bool                 `json:"scan_recent"`
+	RecentDays          int                  `json:"recent_days"`
 	FormatOptions       format.FormatOptions `json:"format_options"`
 }
 
 // FormatResult represents the result of the format command
 type FormatResult struct {
-	Success         bool                    `json:"success"`
-	FormatCommand   *format.FormatCommand   `json:"format_command,omitempty"`
-	ErrorMessage    string                  `json:"error_message,omitempty"`
-	Summary         FormatSummary           `json:"summary"`
-	Discovery       *format.FormatterDiscovery `json:"discovery,omitempty"`
+	Success       bool                       `json:"success"`
+	FormatCommand *format.FormatCommand      `json:"format_command,omitempty"`
+	ErrorMessage  string                     `json:"error_message,omitempty"`
+	Summary       FormatSummary              `json:"summary"`
+	Discovery     *format.FormatterDiscovery `json:"discovery,omitempty"`
 }
 
 // FormatSummary provides a summary of the formatting results
@@ -140,7 +140,7 @@ func (f *FormatCommand) Execute() (*FormatResult, error) {
 	result.Summary.FilesFailed = formatCommand.FilesFailed
 
 	if f.options.Verbose {
-		fmt.Printf("Formatted %d files successfully, %d failures\n", 
+		fmt.Printf("Formatted %d files successfully, %d failures\n",
 			formatCommand.FilesFormatted, formatCommand.FilesFailed)
 	}
 
@@ -166,7 +166,7 @@ func (f *FormatCommand) getFilesToFormat() ([]string, error) {
 			if !filepath.IsAbs(filePath) {
 				filePath = filepath.Join(f.options.RepoPath, filePath)
 			}
-			
+
 			// Check if file exists
 			if _, err := os.Stat(filePath); err == nil {
 				files = append(files, filePath)
@@ -266,50 +266,88 @@ func (f *FormatCommand) getAllFilesInDirectory() ([]string, error) {
 
 // filterFormattableFiles filters files to only include those that can be formatted
 func (f *FormatCommand) filterFormattableFiles(files []string) []string {
-	availableExtensions := format.GetAvailableExtensions()
-	extMap := make(map[string]bool)
-	for _, ext := range availableExtensions {
-		extMap[ext] = true
+	filter := &fileFilter{
+		availableExtensions: f.buildAvailableExtensionsMap(),
+		includeExtensions:   f.options.IncludeExtensions,
+		excludeExtensions:   f.options.ExcludeExtensions,
 	}
 
 	var formattableFiles []string
-
 	for _, file := range files {
-		ext := strings.ToLower(filepath.Ext(file))
-		if len(ext) > 0 && ext[0] == '.' {
-			ext = ext[1:] // Remove the leading dot
-		}
-
-		// Check if extension is supported
-		supported := extMap[ext]
-
-		// Apply include/exclude filters
-		if len(f.options.IncludeExtensions) > 0 {
-			included := false
-			for _, includeExt := range f.options.IncludeExtensions {
-				if ext == includeExt {
-					included = true
-					break
-				}
-			}
-			supported = supported && included
-		}
-
-		if len(f.options.ExcludeExtensions) > 0 {
-			for _, excludeExt := range f.options.ExcludeExtensions {
-				if ext == excludeExt {
-					supported = false
-					break
-				}
-			}
-		}
-
-		if supported {
+		if filter.isFormattable(file) {
 			formattableFiles = append(formattableFiles, file)
 		}
 	}
 
 	return formattableFiles
+}
+
+// fileFilter handles filtering logic for formattable files
+type fileFilter struct {
+	availableExtensions map[string]bool
+	includeExtensions   []string
+	excludeExtensions   []string
+}
+
+// isFormattable checks if a file can be formatted based on its extension
+func (f *fileFilter) isFormattable(filePath string) bool {
+	ext := f.extractExtension(filePath)
+
+	// Check if extension is supported
+	supported := f.availableExtensions[ext]
+
+	// Apply include/exclude filters
+	supported = f.applyIncludeFilter(ext, supported)
+	supported = f.applyExcludeFilter(ext, supported)
+
+	return supported
+}
+
+// extractExtension extracts and normalizes the file extension
+func (f *fileFilter) extractExtension(filePath string) string {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	if len(ext) > 0 && ext[0] == '.' {
+		ext = ext[1:] // Remove the leading dot
+	}
+	return ext
+}
+
+// applyIncludeFilter applies include extension filters
+func (f *fileFilter) applyIncludeFilter(ext string, currentSupported bool) bool {
+	if len(f.includeExtensions) == 0 {
+		return currentSupported
+	}
+
+	for _, includeExt := range f.includeExtensions {
+		if ext == includeExt {
+			return currentSupported
+		}
+	}
+	return false
+}
+
+// applyExcludeFilter applies exclude extension filters
+func (f *fileFilter) applyExcludeFilter(ext string, currentSupported bool) bool {
+	if !currentSupported || len(f.excludeExtensions) == 0 {
+		return currentSupported
+	}
+
+	for _, excludeExt := range f.excludeExtensions {
+		if ext == excludeExt {
+			return false
+		}
+	}
+	return currentSupported
+}
+
+// buildAvailableExtensionsMap creates a map of available extensions for quick lookup
+func (f *FormatCommand) buildAvailableExtensionsMap() map[string]bool {
+	availableExtensions := format.GetAvailableExtensions()
+	extMap := make(map[string]bool)
+	for _, ext := range availableExtensions {
+		extMap[ext] = true
+	}
+	return extMap
 }
 
 // outputResults outputs the formatting results in the specified format
@@ -331,7 +369,7 @@ func (f *FormatCommand) outputResults(result *FormatResult) error {
 
 	// Write to file or stdout
 	if f.options.OutputFile != "" {
-		err = os.WriteFile(f.options.OutputFile, output, 0644)
+		err = os.WriteFile(f.options.OutputFile, output, 0600)
 		if err != nil {
 			return fmt.Errorf("failed to write to file %s: %w", f.options.OutputFile, err)
 		}
@@ -347,77 +385,148 @@ func (f *FormatCommand) outputResults(result *FormatResult) error {
 
 // formatTextOutput formats the results as human-readable text
 func (f *FormatCommand) formatTextOutput(result *FormatResult) []byte {
+	formatter := &textOutputFormatter{verbose: f.options.Verbose}
+	return formatter.formatResult(result)
+}
+
+// textOutputFormatter handles formatting of FormatResult as human-readable text
+type textOutputFormatter struct {
+	verbose bool
+}
+
+// formatResult formats the complete result
+func (t *textOutputFormatter) formatResult(result *FormatResult) []byte {
 	var output []string
 
-	output = append(output, "=== Syncwright Format Report ===")
-	output = append(output, "")
+	output = append(output, "=== Syncwright Format Report ===", "")
 
 	if !result.Success {
 		output = append(output, fmt.Sprintf("❌ Error: %s", result.ErrorMessage))
 		return []byte(strings.Join(output, "\n") + "\n")
 	}
 
-	output = append(output, fmt.Sprintf("Repository: %s", result.Summary.RepoPath))
-	output = append(output, fmt.Sprintf("Duration: %s", result.Summary.Duration))
-	output = append(output, "")
-
-	output = append(output, "📊 Summary:")
-	output = append(output, fmt.Sprintf("  Files scanned: %d", result.Summary.FilesScanned))
-	output = append(output, fmt.Sprintf("  Files processed: %d", result.Summary.FilesProcessed))
-	output = append(output, fmt.Sprintf("  Files formatted: %d", result.Summary.FilesFormatted))
-	output = append(output, fmt.Sprintf("  Files failed: %d", result.Summary.FilesFailed))
-	output = append(output, fmt.Sprintf("  Available formatters: %d", result.Summary.AvailableFormatters))
-	output = append(output, "")
-
-	if result.Discovery != nil {
-		output = append(output, "🔧 Available Formatters:")
-		for _, formatter := range result.Discovery.Formatters {
-			if formatter.Available {
-				version := formatter.Version
-				if version == "unknown" {
-					version = ""
-				} else {
-					version = fmt.Sprintf(" (%s)", version)
-				}
-				output = append(output, fmt.Sprintf("  ✅ %s%s - %s", formatter.Name, version, formatter.Description))
-				output = append(output, fmt.Sprintf("     Extensions: %s", strings.Join(formatter.Extensions, ", ")))
-			} else if f.options.Verbose {
-				output = append(output, fmt.Sprintf("  ❌ %s - %s (not available)", formatter.Name, formatter.Description))
-			}
-		}
-		output = append(output, "")
-	}
-
-	if result.FormatCommand != nil && len(result.FormatCommand.Results) > 0 {
-		if result.Summary.FilesFormatted > 0 {
-			output = append(output, "✅ Successfully Formatted Files:")
-			for _, fileResult := range result.FormatCommand.Results {
-				if fileResult.Success && fileResult.Formatter != "" {
-					output = append(output, fmt.Sprintf("  %s (%s)", fileResult.File, fileResult.Formatter))
-				}
-			}
-			output = append(output, "")
-		}
-
-		if result.Summary.FilesFailed > 0 {
-			output = append(output, "❌ Failed Files:")
-			for _, fileResult := range result.FormatCommand.Results {
-				if !fileResult.Success {
-					output = append(output, fmt.Sprintf("  %s: %s", fileResult.File, fileResult.Error))
-					if f.options.Verbose && fileResult.Stderr != "" {
-						output = append(output, fmt.Sprintf("    stderr: %s", fileResult.Stderr))
-					}
-				}
-			}
-			output = append(output, "")
-		}
-	}
-
-	if result.Summary.FilesFormatted == 0 && result.Summary.FilesFailed == 0 {
-		output = append(output, "ℹ️  No files required formatting")
-	}
+	output = append(output, t.formatHeader(result)...)
+	output = append(output, t.formatSummary(result)...)
+	output = append(output, t.formatDiscovery(result)...)
+	output = append(output, t.formatResults(result)...)
+	output = append(output, t.formatNoFilesMessage(result)...)
 
 	return []byte(strings.Join(output, "\n") + "\n")
+}
+
+// formatHeader formats the header section
+func (t *textOutputFormatter) formatHeader(result *FormatResult) []string {
+	return []string{
+		fmt.Sprintf("Repository: %s", result.Summary.RepoPath),
+		fmt.Sprintf("Duration: %s", result.Summary.Duration),
+		"",
+	}
+}
+
+// formatSummary formats the summary section
+func (t *textOutputFormatter) formatSummary(result *FormatResult) []string {
+	return []string{
+		"📊 Summary:",
+		fmt.Sprintf("  Files scanned: %d", result.Summary.FilesScanned),
+		fmt.Sprintf("  Files processed: %d", result.Summary.FilesProcessed),
+		fmt.Sprintf("  Files formatted: %d", result.Summary.FilesFormatted),
+		fmt.Sprintf("  Files failed: %d", result.Summary.FilesFailed),
+		fmt.Sprintf("  Available formatters: %d", result.Summary.AvailableFormatters),
+		"",
+	}
+}
+
+// formatDiscovery formats the formatter discovery section
+func (t *textOutputFormatter) formatDiscovery(result *FormatResult) []string {
+	if result.Discovery == nil {
+		return []string{}
+	}
+
+	var output []string
+	output = append(output, "🔧 Available Formatters:")
+
+	for _, formatter := range result.Discovery.Formatters {
+		if formatter.Available {
+			output = append(output, t.formatAvailableFormatter(formatter)...)
+		} else if t.verbose {
+			output = append(output, fmt.Sprintf("  ❌ %s - %s (not available)", formatter.Name, formatter.Description))
+		}
+	}
+
+	return append(output, "")
+}
+
+// formatAvailableFormatter formats a single available formatter
+func (t *textOutputFormatter) formatAvailableFormatter(formatter format.Formatter) []string {
+	version := formatter.Version
+	if version == "unknown" {
+		version = ""
+	} else {
+		version = fmt.Sprintf(" (%s)", version)
+	}
+
+	return []string{
+		fmt.Sprintf("  ✅ %s%s - %s", formatter.Name, version, formatter.Description),
+		fmt.Sprintf("     Extensions: %s", strings.Join(formatter.Extensions, ", ")),
+	}
+}
+
+// formatResults formats the file processing results section
+func (t *textOutputFormatter) formatResults(result *FormatResult) []string {
+	if result.FormatCommand == nil || len(result.FormatCommand.Results) == 0 {
+		return []string{}
+	}
+
+	var output []string
+
+	if result.Summary.FilesFormatted > 0 {
+		output = append(output, t.formatSuccessfulFiles(result)...)
+	}
+
+	if result.Summary.FilesFailed > 0 {
+		output = append(output, t.formatFailedFiles(result)...)
+	}
+
+	return output
+}
+
+// formatSuccessfulFiles formats successfully formatted files
+func (t *textOutputFormatter) formatSuccessfulFiles(result *FormatResult) []string {
+	var output []string
+	output = append(output, "✅ Successfully Formatted Files:")
+
+	for _, fileResult := range result.FormatCommand.Results {
+		if fileResult.Success && fileResult.Formatter != "" {
+			output = append(output, fmt.Sprintf("  %s (%s)", fileResult.File, fileResult.Formatter))
+		}
+	}
+
+	return append(output, "")
+}
+
+// formatFailedFiles formats files that failed to format
+func (t *textOutputFormatter) formatFailedFiles(result *FormatResult) []string {
+	var output []string
+	output = append(output, "❌ Failed Files:")
+
+	for _, fileResult := range result.FormatCommand.Results {
+		if !fileResult.Success {
+			output = append(output, fmt.Sprintf("  %s: %s", fileResult.File, fileResult.Error))
+			if t.verbose && fileResult.Stderr != "" {
+				output = append(output, fmt.Sprintf("    stderr: %s", fileResult.Stderr))
+			}
+		}
+	}
+
+	return append(output, "")
+}
+
+// formatNoFilesMessage formats the message when no files were processed
+func (t *textOutputFormatter) formatNoFilesMessage(result *FormatResult) []string {
+	if result.Summary.FilesFormatted == 0 && result.Summary.FilesFailed == 0 {
+		return []string{"ℹ️  No files required formatting"}
+	}
+	return []string{}
 }
 
 // FormatFiles is a convenience function for simple file formatting

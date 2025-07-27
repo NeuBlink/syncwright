@@ -7,7 +7,7 @@
 set -euo pipefail
 
 # Configuration
-REPO_OWNER="neublink"
+REPO_OWNER="NeuBlink"
 REPO_NAME="syncwright"
 BINARY_NAME="syncwright"
 INSTALL_DIR="${PWD}"
@@ -19,21 +19,21 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Logging functions
+# Logging functions - all output to stderr to avoid contaminating command substitution
 log_info() {
-    echo -e "${BLUE}[INFO]${NC} $*"
+    echo -e "${BLUE}[INFO]${NC} $*" >&2
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $*"
+    echo -e "${GREEN}[SUCCESS]${NC} $*" >&2
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $*"
+    echo -e "${YELLOW}[WARNING]${NC} $*" >&2
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $*"
+    echo -e "${RED}[ERROR]${NC} $*" >&2
 }
 
 # Error handling
@@ -89,7 +89,7 @@ get_version() {
     # Try GITHUB_ACTION_REF first (from action context)
     if [ -n "${GITHUB_ACTION_REF:-}" ]; then
         # Extract version from ref (e.g., refs/tags/v1.0.0 -> v1.0.0)
-        version=$(echo "$GITHUB_ACTION_REF" | sed 's|^refs/tags/||')
+        version="${GITHUB_ACTION_REF#refs/tags/}"
         log_info "Using version from GITHUB_ACTION_REF: $version"
     # Try SYNCWRIGHT_VERSION environment variable
     elif [ -n "${SYNCWRIGHT_VERSION:-}" ] && [ "$SYNCWRIGHT_VERSION" != "latest" ]; then
@@ -102,7 +102,7 @@ get_version() {
     fi
     
     # Ensure version starts with 'v' if it's not 'latest'
-    if [ "$version" != "latest" ] && [[ ! $version =~ ^v ]]; then
+    if [ "$version" != "latest" ] && [ "${version#v}" = "$version" ]; then
         version="v${version}"
     fi
     
@@ -136,22 +136,29 @@ check_dependencies() {
     return 0
 }
 
-# Download file with retry logic
+# Download file with retry logic and faster failure for CI
 download_file() {
     local url="$1"
     local output="$2"
     local max_retries=3
-    local retry_delay=2
+    local retry_delay=1
+    
+    # Reduce retries and timeouts in CI environment
+    if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+        max_retries=2
+        retry_delay=1
+    fi
     
     for ((i=1; i<=max_retries; i++)); do
         log_info "Downloading $url (attempt $i/$max_retries)"
         
         if command -v curl >/dev/null 2>&1; then
-            if curl -fsSL --connect-timeout 10 --max-time 300 "$url" -o "$output"; then
+            # Shorter timeouts for faster failure in CI
+            if curl -fsSL --connect-timeout 5 --max-time 30 "$url" -o "$output" 2>/dev/null; then
                 return 0
             fi
         elif command -v wget >/dev/null 2>&1; then
-            if wget -q --timeout=10 --tries=1 "$url" -O "$output"; then
+            if wget -q --timeout=5 --tries=1 "$url" -O "$output" 2>/dev/null; then
                 return 0
             fi
         fi
@@ -159,7 +166,6 @@ download_file() {
         if [ $i -lt $max_retries ]; then
             log_warning "Download failed, retrying in ${retry_delay}s..."
             sleep $retry_delay
-            retry_delay=$((retry_delay * 2))
         fi
     done
     
@@ -210,10 +216,42 @@ verify_checksum() {
     fi
 }
 
+# Check if releases exist before attempting download
+check_releases_exist() {
+    local version="$1"
+    local base_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases"
+    
+    # In CI environments, do a quick check first
+    if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+        local check_url
+        if [ "$version" = "latest" ]; then
+            check_url="${base_url}/latest"
+        else
+            check_url="${base_url}/tag/${version}"
+        fi
+        
+        # Quick HEAD request to check if releases exist
+        if command -v curl >/dev/null 2>&1; then
+            if ! curl -fsSL --connect-timeout 3 --max-time 10 -I "$check_url" >/dev/null 2>&1; then
+                log_warning "No releases found at $check_url - skipping binary download"
+                return 1
+            fi
+        fi
+    fi
+    
+    return 0
+}
+
 # Download and install binary
 install_binary() {
     local platform="$1"
     local version="$2"
+    
+    # Quick check if releases exist before trying to download
+    if ! check_releases_exist "$version"; then
+        log_warning "No releases available, skipping binary installation"
+        return 1
+    fi
     
     # Create temporary directory
     TEMP_DIR=$(mktemp -d)
@@ -237,7 +275,9 @@ install_binary() {
     local checksums_path="${TEMP_DIR}/${checksums_name}"
     
     if ! download_file "$download_url" "$archive_path"; then
-        log_error "Failed to download binary archive"
+        log_warning "Failed to download binary archive from GitHub releases"
+        log_info "This may indicate that no releases are available yet for this repository"
+        log_info "Release URL attempted: $download_url"
         return 1
     fi
     
@@ -292,31 +332,90 @@ install_binary() {
     return 0
 }
 
-# Fallback: install via go install
-install_via_go() {
-    log_warning "Attempting fallback installation via Go toolchain"
+# Fallback: build from source if available locally
+install_via_source_build() {
+    log_warning "Attempting fallback installation by building from source"
     
     if ! command -v go >/dev/null 2>&1; then
-        log_error "Go toolchain not available for fallback installation"
+        log_error "Go toolchain not available for source build"
         return 1
     fi
     
-    local go_package="${REPO_OWNER}/${REPO_NAME}/cmd/${BINARY_NAME}@latest"
-    log_info "Installing via: go install $go_package"
+    # Check if we're running from within the source repository
+    local source_dir=""
     
-    # Install to temporary location first
-    local temp_gopath
-    temp_gopath=$(mktemp -d)
+    # Try to find source in common locations
+    local possible_sources=(
+        "${GITHUB_WORKSPACE:-}"
+        "${GITHUB_ACTION_PATH:-}"
+        "$(pwd)"
+        "/github/workspace"
+    )
     
-    if ! GOPATH="$temp_gopath" GOBIN="${INSTALL_DIR}" go install "$go_package"; then
-        log_error "Failed to install via go install"
-        rm -rf "$temp_gopath"
-        return 1
+    for dir in "${possible_sources[@]}"; do
+        if [ -n "$dir" ] && [ -f "$dir/go.mod" ] && [ -f "$dir/cmd/${BINARY_NAME}/main.go" ]; then
+            source_dir="$dir"
+            log_info "Found source repository at: $source_dir"
+            break
+        fi
+    done
+    
+    if [ -z "$source_dir" ]; then
+        log_warning "Source repository not found in expected locations"
+        log_info "Attempting go install with module path resolution..."
+        
+        # Try go install but handle module path conflicts gracefully
+        local go_package="github.com/${REPO_OWNER}/${REPO_NAME}/cmd/${BINARY_NAME}@latest"
+        log_info "Attempting: go install $go_package"
+        
+        # Create temporary directory for isolated build
+        local temp_dir
+        temp_dir=$(mktemp -d)
+        local original_dir
+        original_dir=$(pwd)
+        
+        cd "$temp_dir"
+        
+        # Initialize a temporary module to avoid conflicts
+        go mod init temp-install 2>/dev/null || true
+        
+        # Try to install, but capture and handle errors gracefully
+        if GOBIN="${INSTALL_DIR}" go install "$go_package" 2>/dev/null; then
+            cd "$original_dir"
+            rm -rf "$temp_dir"
+            log_success "Installed via go install (with module path resolution)"
+            return 0
+        else
+            cd "$original_dir"
+            rm -rf "$temp_dir"
+            log_warning "go install failed due to module path conflicts"
+            return 1
+        fi
     fi
     
-    rm -rf "$temp_gopath"
-    log_success "Installed via Go toolchain"
-    return 0
+    # Build from local source
+    local original_dir
+    original_dir=$(pwd)
+    cd "$source_dir"
+    
+    log_info "Building from source in: $source_dir"
+    
+    # Ensure we have a clean build environment
+    if ! go mod tidy; then
+        log_warning "go mod tidy failed, proceeding anyway"
+    fi
+    
+    # Build the binary
+    local target_path="${INSTALL_DIR}/${BINARY_NAME}"
+    if go build -o "$target_path" "./cmd/${BINARY_NAME}"; then
+        cd "$original_dir"
+        log_success "Built and installed from source"
+        return 0
+    else
+        cd "$original_dir"
+        log_error "Failed to build from source"
+        return 1
+    fi
 }
 
 # Verify installation
@@ -382,17 +481,17 @@ main() {
         log_warning "Binary installation failed"
     fi
     
-    # Try Go fallback if binary installation failed
+    # Try source build fallback if binary installation failed
     log_info "Attempting fallback installation method"
-    if install_via_go; then
+    if install_via_source_build; then
         if verify_installation; then
-            log_success "Syncwright installed successfully via Go toolchain"
+            log_success "Syncwright installed successfully via source build"
             return 0
         else
-            log_error "Go installation verification failed"
+            log_error "Source build installation verification failed"
         fi
     else
-        log_error "Go fallback installation failed"
+        log_error "Source build fallback installation failed"
     fi
     
     log_error "All installation methods failed"
@@ -421,13 +520,13 @@ The script will:
 2. Download the appropriate binary from GitHub releases
 3. Verify the download using SHA256 checksums
 4. Extract and install the binary
-5. Fall back to 'go install' if binary download fails
+5. Fall back to building from source if releases are unavailable
 
 Requirements:
 - curl or wget (for downloading)
 - tar (for extraction)
 - sha256sum or shasum (for verification, optional but recommended)
-- go (for fallback installation, optional)
+- go (for source build fallback, optional)
 
 EOF
     exit 0

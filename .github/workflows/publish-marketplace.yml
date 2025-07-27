@@ -1,3 +1,4 @@
+---
 name: Publish to GitHub Marketplace
 
 on:
@@ -41,29 +42,29 @@ jobs:
           else
             TAG="${GITHUB_REF#refs/tags/}"
           fi
-          
+
           echo "Processing tag: $TAG"
-          
+
           # Validate tag format
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
             echo "Error: Invalid tag format. Expected format: v1.2.3 or v1.2.3-beta.1"
             exit 1
           fi
-          
+
           # Extract version components
           VERSION=${TAG#v}
           MAJOR_VERSION=$(echo "$VERSION" | cut -d. -f1)
-          
+
           # Check if it's a prerelease
           IS_PRERELEASE="false"
           if [[ "$VERSION" =~ - ]]; then
             IS_PRERELEASE="true"
           fi
-          
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "major-version=$MAJOR_VERSION" >> $GITHUB_OUTPUT
           echo "is-prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-          
+
           echo "Version: $VERSION"
           echo "Major version: $MAJOR_VERSION"
           echo "Is prerelease: $IS_PRERELEASE"
@@ -71,37 +72,37 @@ jobs:
       - name: Validate action.yml syntax
         run: |
           echo "Validating action.yml syntax..."
-          
+
           # Check if action.yml exists
           if [ ! -f "action.yml" ]; then
             echo "Error: action.yml not found"
             exit 1
           fi
-          
+
           # Basic YAML validation using python
           python3 -c "
           import yaml
           import sys
-          
+
           try:
               with open('action.yml', 'r') as f:
                   action = yaml.safe_load(f)
-              
+
               # Validate required fields
               required_fields = ['name', 'description', 'runs']
               for field in required_fields:
                   if field not in action:
                       print(f'Error: Missing required field: {field}')
                       sys.exit(1)
-              
+
               # Validate branding
               if 'branding' in action:
                   branding = action['branding']
                   if 'icon' not in branding or 'color' not in branding:
                       print('Warning: Incomplete branding information')
-              
+
               print('action.yml validation passed')
-              
+
           except Exception as e:
               print(f'Error validating action.yml: {e}')
               sys.exit(1)
@@ -117,14 +118,14 @@ jobs:
           echo "Testing Go build..."
           go mod download
           go build -v ./cmd/syncwright
-          
+
           # Test the binary
           ./syncwright --version || echo "Warning: Binary version check failed"
 
       - name: Validate scripts
         run: |
           echo "Validating installation scripts..."
-          
+
           # Check script permissions and basic syntax
           if [ -f "scripts/install.sh" ]; then
             chmod +x scripts/install.sh
@@ -133,7 +134,7 @@ jobs:
           else
             echo "Warning: install.sh not found"
           fi
-          
+
           if [ -f "scripts/test-install.sh" ]; then
             chmod +x scripts/test-install.sh
             bash -n scripts/test-install.sh
@@ -143,28 +144,28 @@ jobs:
       - name: Test action locally
         run: |
           echo "Testing action execution..."
-          
+
           # Create a minimal test environment
           git config --global user.name "Test User"
           git config --global user.email "test@example.com"
-          
+
           # Test validation mode
           export INPUT_RUN_VALIDATION=true
           export INPUT_MAX_TOKENS=-1
           export INPUT_MERGE_FAILED=false
-          
+
           # Run a subset of the action steps manually
           echo "Running action validation..."
           bash -c '
             echo "Setting up environment..."
             export SYNCWRIGHT_VERSION=latest
             export SYNCWRIGHT_DEBUG=false
-            
+
             echo "Installing binary..."
             if [ -f "scripts/install.sh" ]; then
               ./scripts/install.sh
             fi
-            
+
             echo "Action test completed"
           '
 
@@ -184,15 +185,15 @@ jobs:
         run: |
           MAJOR_VERSION="v${{ needs.validate-action.outputs.major-version }}"
           echo "Updating major version tag: $MAJOR_VERSION"
-          
+
           # Configure git
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
+
           # Create or update the major version tag
           git tag -fa "$MAJOR_VERSION" -m "Update $MAJOR_VERSION to ${{ github.ref_name }}"
           git push origin "$MAJOR_VERSION" --force
-          
+
           echo "Major version tag $MAJOR_VERSION updated successfully"
 
       - name: Generate release notes
@@ -202,43 +203,44 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="${{ github.event.inputs.tag }}"
           fi
-          
+
           echo "Generating release notes for $TAG..."
-          
+
           # Get the previous tag for changelog
           PREV_TAG=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || echo "")
-          
+
           # Generate changelog
           CHANGELOG=""
           if [ -n "$PREV_TAG" ]; then
             echo "Generating changelog from $PREV_TAG to $TAG"
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG".."$TAG" 2>/dev/null || echo "- Initial release")
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG".."$TAG" \
+              2>/dev/null || echo "- Initial release")
           else
             CHANGELOG="- Initial release"
           fi
-          
+
           # Create comprehensive release notes
           RELEASE_NOTES=$(cat <<EOF
           # Syncwright $TAG
-          
+
           AI-powered Git merge conflict resolution tool for seamless CI/CD integration.
-          
+
           ## What's Changed
-          
+
           $CHANGELOG
-          
+
           ## Features
-          
+
           - 🤖 **AI-Powered Resolution**: Automatic conflict resolution using advanced language models
           - 🔍 **Intelligent Detection**: Smart conflict detection and analysis
           - 🛡️ **Validation Suite**: Comprehensive pre and post-merge validation
           - 🚀 **CI/CD Ready**: Drop-in GitHub Actions integration
           - 📊 **Detailed Reporting**: Rich conflict resolution summaries and metrics
-          
+
           ## Usage
-          
+
           Add this action to your workflow:
-          
+
           \`\`\`yaml
           - name: Resolve merge conflicts with AI
             uses: syncwright-team/syncwright@v${{ needs.validate-action.outputs.major-version }}
@@ -247,29 +249,29 @@ jobs:
               run_validation: true
               max_tokens: -1
           \`\`\`
-          
+
           ## Requirements
-          
+
           - Claude Code OAuth token for AI-powered operations
           - Git repository with merge conflicts (when applicable)
           - Linux/macOS/Windows GitHub runners supported
-          
+
           ## Documentation
-          
+
           - [Usage Guide](https://github.com/syncwright-team/syncwright/blob/main/USAGE.md)
           - [CI/CD Setup](https://github.com/syncwright-team/syncwright/blob/main/docs/CI_CD_SETUP.md)
           - [Security Guidelines](https://github.com/syncwright-team/syncwright/blob/main/SECURITY.md)
-          
+
           ---
-          
+
           **Full Changelog**: https://github.com/syncwright-team/syncwright/compare/$PREV_TAG...$TAG
           EOF
           )
-          
+
           # Save to file and output
           echo "$RELEASE_NOTES" > release-notes.md
           echo "release-notes-file=release-notes.md" >> $GITHUB_OUTPUT
-          
+
           echo "Release notes generated successfully"
 
       - name: Create GitHub Release
@@ -293,7 +295,7 @@ jobs:
           echo "Is Prerelease: ${{ needs.validate-action.outputs.is-prerelease }}"
           echo "Release URL: ${{ steps.create-release.outputs.html_url }}"
           echo "=================================="
-          
+
           # Add to step summary
           {
             echo "## 🚀 Marketplace Publication Complete"
@@ -331,7 +333,8 @@ jobs:
         run: |
           echo "🎉 Syncwright successfully published to GitHub Marketplace!"
           echo "Version ${{ needs.validate-action.outputs.version }} is now available"
-          echo "Users can now reference the action with: syncwright-team/syncwright@v${{ needs.validate-action.outputs.major-version }}"
+          echo "Users can now reference the action with: " \
+            "syncwright-team/syncwright@v${{ needs.validate-action.outputs.major-version }}"
 
       - name: Publication Failure
         if: needs.publish-marketplace.result == 'failure'
