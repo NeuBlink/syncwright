@@ -128,40 +128,43 @@ runs:
             export GITHUB_WORKSPACE="${WORKSPACE_PATH}"
             export GITHUB_ACTION_PATH="${ACTION_PATH}"
             
-            if [ -f "$INSTALL_SCRIPT" ] && (timeout 15s "$INSTALL_SCRIPT" 2>/dev/null || (command -v gtimeout >/dev/null 2>&1 && gtimeout 15s "$INSTALL_SCRIPT" 2>/dev/null)); then
+            if [ -f "$INSTALL_SCRIPT" ] && \
+               (timeout 15s "$INSTALL_SCRIPT" 2>/dev/null || \
+                (command -v gtimeout >/dev/null 2>&1 && \
+                 gtimeout 15s "$INSTALL_SCRIPT" 2>/dev/null)); then
               echo "Installation script succeeded"
             else
               echo "Installation script failed or timed out, creating functional stub..."
               
               # Priority 4: Create functional stub for testing (fastest fallback)
-              cat > "$TARGET_BINARY" << 'EOF'
-#!/bin/bash
-case "$1" in
-  --version) echo "syncwright version 0.0.0-ci-stub" ;;
-  --help) echo "Usage: syncwright [command] [options]" ;;
-  validate) 
-    echo "Validation completed (CI stub mode)"
-    [ "$2" = "--verbose" ] && echo "Verbose validation output"
-    [ "$2" = "--comprehensive" ] && echo "Comprehensive validation output"
-    [ "$2" = "--post-merge" ] && echo "Post-merge validation output"
-    exit 0 ;;
-  detect) 
-    echo "Detection completed (CI stub mode)"
-    [ "$2" = "--format" ] && [ "$3" = "json" ] && echo '{"conflicts": []}'
-    exit 0 ;;
-  format) 
-    echo "Format completed (CI stub mode)"
-    [ "$2" = "--dry-run" ] && echo "Dry run format output"
-    exit 0 ;;
-  resolve) 
-    echo "Resolve completed (CI stub mode)"
-    [ "$2" = "--ai" ] && echo "AI resolution completed"
-    exit 0 ;;
-  *) 
-    echo "Command $1 completed (CI stub mode)"
-    exit 0 ;;
-esac
-EOF
+              cat > "$TARGET_BINARY" << 'STUB_EOF'
+              #!/bin/bash
+              case "$1" in
+                --version) echo "syncwright version 0.0.0-ci-stub" ;;
+                --help) echo "Usage: syncwright [command] [options]" ;;
+                validate) 
+                  echo "Validation completed (CI stub mode)"
+                  [ "$2" = "--verbose" ] && echo "Verbose validation output"
+                  [ "$2" = "--comprehensive" ] && echo "Comprehensive validation output"
+                  [ "$2" = "--post-merge" ] && echo "Post-merge validation output"
+                  exit 0 ;;
+                detect) 
+                  echo "Detection completed (CI stub mode)"
+                  [ "$2" = "--format" ] && [ "$3" = "json" ] && echo '{"conflicts": []}'
+                  exit 0 ;;
+                format) 
+                  echo "Format completed (CI stub mode)"
+                  [ "$2" = "--dry-run" ] && echo "Dry run format output"
+                  exit 0 ;;
+                resolve) 
+                  echo "Resolve completed (CI stub mode)"
+                  [ "$2" = "--ai" ] && echo "AI resolution completed"
+                  exit 0 ;;
+                *) 
+                  echo "Command $1 completed (CI stub mode)"
+                  exit 0 ;;
+              esac
+              STUB_EOF
               chmod +x "$TARGET_BINARY"
               echo "Warning: Using CI stub for testing. Full functionality not available."
             fi
