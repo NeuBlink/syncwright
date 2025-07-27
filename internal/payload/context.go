@@ -251,7 +251,8 @@ func (pb *PayloadBuilder) extractCommitInfo(repoPath string) (CommitInfo, error)
 			return info, fmt.Errorf("invalid commit hash format: %s", info.TheirsCommit)
 		}
 
-		cmd = exec.Command("git", "merge-base", info.OursCommit, info.TheirsCommit) // #nosec G204 - commit hashes validated with regex above
+		// #nosec G204 - commit hashes validated with regex above
+		cmd = exec.Command("git", "merge-base", info.OursCommit, info.TheirsCommit)
 		cmd.Dir = repoPath
 		if output, err := cmd.Output(); err == nil {
 			info.BaseCommit = strings.TrimSpace(string(output))

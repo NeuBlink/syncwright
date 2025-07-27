@@ -289,11 +289,13 @@ Examples:
 	cmd.Flags().IntVar(&concurrency, "concurrency", 1, "Number of files to format concurrently")
 
 	// Formatter selection
-	cmd.Flags().StringSliceVar(&preferredFormatters, "prefer-formatter", nil, "Preferred formatters to use (e.g., goimports,prettier)")
+	cmd.Flags().StringSliceVar(&preferredFormatters, "prefer-formatter", nil, 
+		"Preferred formatters to use (e.g., goimports,prettier)")
 	cmd.Flags().StringSliceVar(&excludeFormatters, "exclude-formatter", nil, "Formatters to exclude (e.g., gofmt,eslint)")
 
 	// File selection
-	cmd.Flags().StringSliceVar(&includeExtensions, "include-ext", nil, "Only format files with these extensions (e.g., go,js,py)")
+	cmd.Flags().StringSliceVar(&includeExtensions, "include-ext", nil, 
+		"Only format files with these extensions (e.g., go,js,py)")
 	cmd.Flags().StringSliceVar(&excludeExtensions, "exclude-ext", nil, "Exclude files with these extensions")
 	cmd.Flags().BoolVar(&scanRecent, "recent", false, "Format only recently modified files")
 	cmd.Flags().IntVar(&recentDays, "recent-days", 7, "Number of days to look back for recent files")
@@ -403,7 +405,8 @@ suitable for CI/CD environments and automated conflict resolution.`,
 			}
 
 			if !aiMode {
-				fmt.Printf("Found %d conflicts. Use --ai flag to resolve with AI assistance.\n", len(detectResult.ConflictReport.ConflictedFiles))
+				numConflicts := len(detectResult.ConflictReport.ConflictedFiles)
+			fmt.Printf("Found %d conflicts. Use --ai flag to resolve with AI assistance.\n", numConflicts)
 				return nil
 			}
 
@@ -418,12 +421,14 @@ suitable for CI/CD environments and automated conflict resolution.`,
 			}
 
 			if dryRun {
-				fmt.Printf("Dry run: Would resolve %d conflicts with AI assistance\n", len(detectResult.ConflictReport.ConflictedFiles))
+				numConflicts := len(detectResult.ConflictReport.ConflictedFiles)
+				fmt.Printf("Dry run: Would resolve %d conflicts with AI assistance\n", numConflicts)
 				return nil
 			}
 
 			// TODO: Complete the pipeline with payload generation and AI application
-			fmt.Printf("Detected %d conflicts. Full AI resolution pipeline coming soon.\n", len(detectResult.ConflictReport.ConflictedFiles))
+			numConflicts := len(detectResult.ConflictReport.ConflictedFiles)
+			fmt.Printf("Detected %d conflicts. Full AI resolution pipeline coming soon.\n", numConflicts)
 			fmt.Println("For now, use the individual commands: detect -> payload -> ai-apply")
 
 			return nil

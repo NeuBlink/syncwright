@@ -65,6 +65,7 @@ func GetConflictDiff(repoPath string, filePaths []string) ([]DiffFile, error) {
 		// git diff returns non-zero exit code when there are differences
 		// This is expected, so we continue processing the output
 		// The output may still contain valid diff data
+		// Continue with processing despite non-zero exit
 	}
 
 	return parseDiffOutput(string(output))
@@ -320,7 +321,8 @@ func GetFileAtRevision(repoPath, filePath, revision string) ([]string, error) {
 		return nil, fmt.Errorf("file path contains unsafe characters: %s", filePath)
 	}
 
-	cmd := exec.Command("git", "show", revision+":"+cleanPath) // #nosec G204 - revision and cleanPath validated with regex above
+	// #nosec G204 - revision and cleanPath validated with regex above
+	cmd := exec.Command("git", "show", revision+":"+cleanPath)
 	cmd.Dir = repoPath
 
 	output, err := cmd.Output()

@@ -271,8 +271,11 @@ func executeFormatter(formatter Formatter, filePath string, result *FormatResult
 
 	// Validate file path to prevent command injection
 	cleanPath := filepath.Clean(filePath)
-	if strings.Contains(cleanPath, "..") || strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") || strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") || strings.Contains(cleanPath, "$") {
-		return fmt.Errorf("invalid file path: %s", filePath)
+	dangerousChars := []string{"..", ";", "&", "|", "`", "$"}
+	for _, char := range dangerousChars {
+		if strings.Contains(cleanPath, char) {
+			return fmt.Errorf("invalid file path: %s", filePath)
+		}
 	}
 
 	// Build command arguments with validated path
@@ -520,7 +523,12 @@ func filterFormatters(formatters []Formatter, options FormatOptions) []Formatter
 }
 
 // executeFormatterWithContext runs a formatter with a custom context
-func executeFormatterWithContext(ctx context.Context, formatter Formatter, filePath string, result *FormatResult) error {
+func executeFormatterWithContext(
+	ctx context.Context, 
+	formatter Formatter, 
+	filePath string, 
+	result *FormatResult,
+) error {
 	// Validate formatter command to prevent command injection
 	matched, err := regexp.MatchString(`^[a-zA-Z0-9_\-]+$`, formatter.Command)
 	if err != nil {
@@ -532,8 +540,11 @@ func executeFormatterWithContext(ctx context.Context, formatter Formatter, fileP
 
 	// Validate file path to prevent command injection
 	cleanPath := filepath.Clean(filePath)
-	if strings.Contains(cleanPath, "..") || strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") || strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") || strings.Contains(cleanPath, "$") {
-		return fmt.Errorf("invalid file path: %s", filePath)
+	dangerousChars := []string{"..", ";", "&", "|", "`", "$"}
+	for _, char := range dangerousChars {
+		if strings.Contains(cleanPath, char) {
+			return fmt.Errorf("invalid file path: %s", filePath)
+		}
 	}
 
 	// Build command arguments with validated path

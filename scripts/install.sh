@@ -136,22 +136,29 @@ check_dependencies() {
     return 0
 }
 
-# Download file with retry logic
+# Download file with retry logic and faster failure for CI
 download_file() {
     local url="$1"
     local output="$2"
     local max_retries=3
-    local retry_delay=2
+    local retry_delay=1
+    
+    # Reduce retries and timeouts in CI environment
+    if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+        max_retries=2
+        retry_delay=1
+    fi
     
     for ((i=1; i<=max_retries; i++)); do
         log_info "Downloading $url (attempt $i/$max_retries)"
         
         if command -v curl >/dev/null 2>&1; then
-            if curl -fsSL --connect-timeout 10 --max-time 300 "$url" -o "$output"; then
+            # Shorter timeouts for faster failure in CI
+            if curl -fsSL --connect-timeout 5 --max-time 30 "$url" -o "$output" 2>/dev/null; then
                 return 0
             fi
         elif command -v wget >/dev/null 2>&1; then
-            if wget -q --timeout=10 --tries=1 "$url" -O "$output"; then
+            if wget -q --timeout=5 --tries=1 "$url" -O "$output" 2>/dev/null; then
                 return 0
             fi
         fi
@@ -159,7 +166,6 @@ download_file() {
         if [ $i -lt $max_retries ]; then
             log_warning "Download failed, retrying in ${retry_delay}s..."
             sleep $retry_delay
-            retry_delay=$((retry_delay * 2))
         fi
     done
     
@@ -210,10 +216,42 @@ verify_checksum() {
     fi
 }
 
+# Check if releases exist before attempting download
+check_releases_exist() {
+    local version="$1"
+    local base_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases"
+    
+    # In CI environments, do a quick check first
+    if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+        local check_url
+        if [ "$version" = "latest" ]; then
+            check_url="${base_url}/latest"
+        else
+            check_url="${base_url}/tag/${version}"
+        fi
+        
+        # Quick HEAD request to check if releases exist
+        if command -v curl >/dev/null 2>&1; then
+            if ! curl -fsSL --connect-timeout 3 --max-time 10 -I "$check_url" >/dev/null 2>&1; then
+                log_warning "No releases found at $check_url - skipping binary download"
+                return 1
+            fi
+        fi
+    fi
+    
+    return 0
+}
+
 # Download and install binary
 install_binary() {
     local platform="$1"
     local version="$2"
+    
+    # Quick check if releases exist before trying to download
+    if ! check_releases_exist "$version"; then
+        log_warning "No releases available, skipping binary installation"
+        return 1
+    fi
     
     # Create temporary directory
     TEMP_DIR=$(mktemp -d)

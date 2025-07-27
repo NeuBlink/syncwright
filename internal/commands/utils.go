@@ -158,88 +158,50 @@ func detectLanguageFromPath(filePath string) string {
 
 // validateSyntax performs basic syntax validation
 func validateSyntax(lines []string, language string) ValidationResult {
-	result := ValidationResult{Valid: true}
-
 	switch language {
 	case "go":
-		result = validateGoSyntax(lines)
+		return validateGoSyntax(lines)
 	case "javascript", "typescript":
-		result = validateJSSyntax(lines)
+		return validateJSSyntax(lines)
 	case "python":
-		result = validatePythonSyntax(lines)
+		return validatePythonSyntax(lines)
 	case "java":
-		result = validateJavaSyntax(lines)
+		return validateJavaSyntax(lines)
 	default:
 		// Generic validation
-		result = validateGenericSyntax(lines)
+		return validateGenericSyntax(lines)
 	}
-
-	return result
 }
 
 // validateGoSyntax validates Go syntax
 func validateGoSyntax(lines []string) ValidationResult {
 	result := ValidationResult{Valid: true}
+	counts := &bracketCounts{}
 
-	openBraces := 0
-	openParens := 0
-	openBrackets := 0
-
+	// Validate each line and count brackets
 	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Count braces, parentheses, brackets
-		for _, char := range trimmed {
-			switch char {
-			case '{':
-				openBraces++
-			case '}':
-				openBraces--
-			case '(':
-				openParens++
-			case ')':
-				openParens--
-			case '[':
-				openBrackets++
-			case ']':
-				openBrackets--
-			}
-		}
-
-		// Check for common Go syntax issues
-		if strings.HasSuffix(trimmed, ";") && !strings.Contains(trimmed, "for") {
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("Line %d: Unnecessary semicolon in Go", i+1))
-		}
+		validateGoLine(line, i+1, counts, &result)
 	}
 
 	// Check for unbalanced brackets
-	if openBraces != 0 {
-		result.Valid = false
-		result.Errors = append(result.Errors, "Unbalanced braces")
-	}
-	if openParens != 0 {
-		result.Valid = false
-		result.Errors = append(result.Errors, "Unbalanced parentheses")
-	}
-	if openBrackets != 0 {
-		result.Valid = false
-		result.Errors = append(result.Errors, "Unbalanced brackets")
-	}
+	validateBracketBalance(counts, &result)
 
 	return result
 }
 
-// bracketCounts holds the counts for different bracket types
-type bracketCounts struct {
-	braces   int
-	parens   int
-	brackets int
+// validateGoLine validates a single line of Go code
+func validateGoLine(line string, lineNum int, counts *bracketCounts, result *ValidationResult) {
+	trimmed := strings.TrimSpace(line)
+
+	// Count braces, parentheses, brackets
+	countBrackets(trimmed, counts)
+
+	// Check for common Go syntax issues
+	checkGoSyntaxIssues(trimmed, lineNum, result)
 }
 
 // countBrackets counts opening and closing brackets in a line
-func countBrackets(line string) bracketCounts {
-	counts := bracketCounts{}
+func countBrackets(line string, counts *bracketCounts) {
 	for _, char := range line {
 		switch char {
 		case '{':
@@ -256,11 +218,18 @@ func countBrackets(line string) bracketCounts {
 			counts.brackets--
 		}
 	}
-	return counts
 }
 
-// validateBracketBalance checks for unbalanced brackets and adds errors
-func validateBracketBalance(result *ValidationResult, counts bracketCounts) {
+// checkGoSyntaxIssues checks for common Go syntax problems
+func checkGoSyntaxIssues(line string, lineNum int, result *ValidationResult) {
+	if strings.HasSuffix(line, ";") && !strings.Contains(line, "for") {
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("Line %d: Unnecessary semicolon in Go", lineNum))
+	}
+}
+
+// validateBracketBalance checks if brackets are balanced
+func validateBracketBalance(counts *bracketCounts, result *ValidationResult) {
 	if counts.braces != 0 {
 		result.Valid = false
 		result.Errors = append(result.Errors, "Unbalanced braces")
@@ -274,6 +243,14 @@ func validateBracketBalance(result *ValidationResult, counts bracketCounts) {
 		result.Errors = append(result.Errors, "Unbalanced brackets")
 	}
 }
+
+// bracketCounts holds the counts for different bracket types
+type bracketCounts struct {
+	braces   int
+	parens   int
+	brackets int
+}
+
 
 // checkJSSemicolon checks for missing semicolons in JavaScript/TypeScript
 func checkJSSemicolon(trimmed string, lineNum int) string {
@@ -292,7 +269,8 @@ func validateJSSyntax(lines []string) ValidationResult {
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		lineCounts := countBrackets(trimmed)
+		lineCounts := &bracketCounts{}
+		countBrackets(trimmed, lineCounts)
 		
 		// Accumulate bracket counts
 		totalCounts.braces += lineCounts.braces
@@ -306,7 +284,7 @@ func validateJSSyntax(lines []string) ValidationResult {
 	}
 
 	// Validate bracket balance
-	validateBracketBalance(&result, totalCounts)
+	validateBracketBalance(&totalCounts, &result)
 	return result
 }
 
@@ -409,7 +387,8 @@ func validateJavaSyntax(lines []string) ValidationResult {
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		lineCounts := countBrackets(trimmed)
+		lineCounts := &bracketCounts{}
+		countBrackets(trimmed, lineCounts)
 		
 		// Accumulate bracket counts
 		totalCounts.braces += lineCounts.braces
@@ -423,50 +402,37 @@ func validateJavaSyntax(lines []string) ValidationResult {
 	}
 
 	// Validate bracket balance
-	validateBracketBalance(&result, totalCounts)
+	validateBracketBalance(&totalCounts, &result)
 	return result
 }
 
 // validateGenericSyntax performs generic syntax validation
 func validateGenericSyntax(lines []string) ValidationResult {
 	result := ValidationResult{Valid: true}
+	counts := &bracketCounts{}
 
-	openBraces := 0
-	openParens := 0
-	openBrackets := 0
-
+	// Count brackets in all lines
 	for _, line := range lines {
-		// Count braces, parentheses, brackets
-		for _, char := range line {
-			switch char {
-			case '{':
-				openBraces++
-			case '}':
-				openBraces--
-			case '(':
-				openParens++
-			case ')':
-				openParens--
-			case '[':
-				openBrackets++
-			case ']':
-				openBrackets--
-			}
-		}
+		countBrackets(line, counts)
 	}
 
 	// Check for unbalanced brackets
-	if openBraces != 0 {
-		result.Warnings = append(result.Warnings, "Potentially unbalanced braces")
-	}
-	if openParens != 0 {
-		result.Warnings = append(result.Warnings, "Potentially unbalanced parentheses")
-	}
-	if openBrackets != 0 {
-		result.Warnings = append(result.Warnings, "Potentially unbalanced brackets")
-	}
+	validateGenericBracketBalance(counts, &result)
 
 	return result
+}
+
+// validateGenericBracketBalance checks bracket balance for generic syntax
+func validateGenericBracketBalance(counts *bracketCounts, result *ValidationResult) {
+	if counts.braces != 0 {
+		result.Warnings = append(result.Warnings, "Potentially unbalanced braces")
+	}
+	if counts.parens != 0 {
+		result.Warnings = append(result.Warnings, "Potentially unbalanced parentheses")
+	}
+	if counts.brackets != 0 {
+		result.Warnings = append(result.Warnings, "Potentially unbalanced brackets")
+	}
 }
 
 // validateSemantics performs basic semantic validation
@@ -481,6 +447,7 @@ func validateSemantics(lines []string, language string) ValidationResult {
 		if strings.Contains(trimmed, "var ") || strings.Contains(trimmed, "let ") ||
 			strings.Contains(trimmed, "const ") {
 			// This is a simplified check - a real implementation would need proper parsing
+			// Currently skipping detailed variable declaration analysis
 		}
 
 		// Check for unreachable code
@@ -511,7 +478,11 @@ func hasConflictMarkers(lines []string) bool {
 }
 
 // SafeApplyResolutions applies resolutions with validation and safety checks
-func SafeApplyResolutions(repoPath string, resolutions []gitutils.ConflictResolution, options SafeApplyOptions) (*gitutils.ResolutionResult, error) {
+func SafeApplyResolutions(
+	repoPath string, 
+	resolutions []gitutils.ConflictResolution, 
+	options SafeApplyOptions,
+) (*gitutils.ResolutionResult, error) {
 	result := &gitutils.ResolutionResult{
 		Success: true,
 	}

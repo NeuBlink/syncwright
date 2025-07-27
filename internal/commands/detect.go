@@ -132,6 +132,7 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 		// Note: This would require modifying the PayloadBuilder to accept preferences
 		// For now, we'll use the default builder
 		// TODO: Implement custom preferences support
+		// Currently using default builder settings
 	}
 
 	conflictPayload, err := payloadBuilder.BuildPayload(conflictReport)

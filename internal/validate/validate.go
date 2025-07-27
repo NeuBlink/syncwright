@@ -868,7 +868,8 @@ func executeCommand(cmd ValidationCommand, timeoutSeconds int) CommandResult {
 	}
 
 	// Create command
-	execCmd := exec.CommandContext(ctx, cmd.Command, cmd.Args...) // #nosec G204 - cmd.Command is validated with regex above
+	// #nosec G204 - cmd.Command is validated with regex above
+	execCmd := exec.CommandContext(ctx, cmd.Command, cmd.Args...)
 	if cmd.WorkingDir != "" {
 		execCmd.Dir = cmd.WorkingDir
 	}
@@ -973,16 +974,25 @@ func RunValidation(rootPath string, timeoutSeconds int) (*ValidationReport, erro
 	}
 
 	// Check for critical file issues
+	hasCriticalIssues := false
 	for _, fileResult := range fileResults {
 		if !fileResult.ConflictFree {
 			// Conflict markers are critical but don't fail overall validation
 			// as the goal is to provide feedback, not block the workflow
+			hasCriticalIssues = true
 		}
 		for _, issue := range fileResult.Issues {
 			if issue.Severity == SeverityError {
 				// File syntax errors also don't fail overall validation
+				hasCriticalIssues = true
 			}
 		}
+	}
+	
+	// Set overall success based on critical issues but don't fail validation
+	// The goal is to provide feedback, not block workflows
+	if hasCriticalIssues {
+		report.OverallSuccess = false
 	}
 
 	return report, nil
@@ -1103,10 +1113,13 @@ func calculateSummary(commandResults []CommandResult, fileResults []ValidationRe
 
 		for _, issue := range result.Issues {
 			summary.TotalIssues++
-			if issue.Severity == SeverityError {
+			switch issue.Severity {
+			case SeverityError:
 				summary.ErrorIssues++
-			} else if issue.Severity == SeverityWarning {
+			case SeverityWarning:
 				summary.WarningIssues++
+			default:
+				// Handle other severity levels if needed
 			}
 		}
 	}

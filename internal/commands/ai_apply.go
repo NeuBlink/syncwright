@@ -177,7 +177,10 @@ func (a *AIApplyCommand) prepareInput(result *AIApplyResult) (*payload.ConflictP
 }
 
 // getAIResolutions sends payload to AI and gets response
-func (a *AIApplyCommand) getAIResolutions(conflictPayload *payload.ConflictPayload, result *AIApplyResult) (*AIResolveResponse, error) {
+func (a *AIApplyCommand) getAIResolutions(
+	conflictPayload *payload.ConflictPayload, 
+	result *AIApplyResult,
+) (*AIResolveResponse, error) {
 	aiResponse, err := a.sendToAI(conflictPayload)
 	if err != nil {
 		result.ErrorMessage = fmt.Sprintf("Failed to get AI resolution: %v", err)
@@ -200,7 +203,10 @@ func (a *AIApplyCommand) getAIResolutions(conflictPayload *payload.ConflictPaylo
 }
 
 // processResolutions filters resolutions by confidence
-func (a *AIApplyCommand) processResolutions(aiResponse *AIResolveResponse, result *AIApplyResult) []gitutils.ConflictResolution {
+func (a *AIApplyCommand) processResolutions(
+	aiResponse *AIResolveResponse, 
+	result *AIApplyResult,
+) []gitutils.ConflictResolution {
 	filteredResolutions := a.filterResolutionsByConfidence(aiResponse.Resolutions)
 	result.Resolutions = filteredResolutions
 	result.SkippedResolutions = len(aiResponse.Resolutions) - len(filteredResolutions)
@@ -214,7 +220,10 @@ func (a *AIApplyCommand) processResolutions(aiResponse *AIResolveResponse, resul
 }
 
 // applyResolutionsIfNeeded applies resolutions based on options
-func (a *AIApplyCommand) applyResolutionsIfNeeded(filteredResolutions []gitutils.ConflictResolution, result *AIApplyResult) error {
+func (a *AIApplyCommand) applyResolutionsIfNeeded(
+	filteredResolutions []gitutils.ConflictResolution, 
+	result *AIApplyResult,
+) error {
 	if a.options.DryRun {
 		result.Success = true
 		fmt.Printf("Dry run: Would apply %d resolutions\n", len(filteredResolutions))
@@ -234,7 +243,10 @@ func (a *AIApplyCommand) applyResolutionsIfNeeded(filteredResolutions []gitutils
 }
 
 // applyResolutionsAutomatically applies resolutions without user interaction
-func (a *AIApplyCommand) applyResolutionsAutomatically(filteredResolutions []gitutils.ConflictResolution, result *AIApplyResult) error {
+func (a *AIApplyCommand) applyResolutionsAutomatically(
+	filteredResolutions []gitutils.ConflictResolution, 
+	result *AIApplyResult,
+) error {
 	applicationResult, err := gitutils.ApplyResolutions(a.options.RepoPath, filteredResolutions)
 	if err != nil {
 		result.ErrorMessage = fmt.Sprintf("Failed to apply resolutions: %v", err)
@@ -255,7 +267,10 @@ func (a *AIApplyCommand) applyResolutionsAutomatically(filteredResolutions []git
 }
 
 // applyResolutionsInteractively applies resolutions with user confirmation
-func (a *AIApplyCommand) applyResolutionsInteractively(filteredResolutions []gitutils.ConflictResolution, result *AIApplyResult) error {
+func (a *AIApplyCommand) applyResolutionsInteractively(
+	filteredResolutions []gitutils.ConflictResolution, 
+	result *AIApplyResult,
+) error {
 	if a.askForConfirmation(filteredResolutions) {
 		applicationResult, err := gitutils.ApplyResolutions(a.options.RepoPath, filteredResolutions)
 		if err != nil {
@@ -378,7 +393,9 @@ func (a *AIApplyCommand) sendToAI(conflictPayload *payload.ConflictPayload) (*AI
 }
 
 // filterResolutionsByConfidence filters resolutions based on confidence threshold
-func (a *AIApplyCommand) filterResolutionsByConfidence(resolutions []gitutils.ConflictResolution) []gitutils.ConflictResolution {
+func (a *AIApplyCommand) filterResolutionsByConfidence(
+	resolutions []gitutils.ConflictResolution,
+) []gitutils.ConflictResolution {
 	var filtered []gitutils.ConflictResolution
 
 	for _, resolution := range resolutions {
