@@ -107,7 +107,7 @@ runs:
         elif [ -f "${ACTION_PATH}/go.mod" ] && [ -f "${ACTION_PATH}/cmd/syncwright/main.go" ]; then
           echo "Building directly from source in action path (CI optimization)..."
           cd "${ACTION_PATH}"
-          
+
           # Use make build for consistent build process
           if make build 2>/dev/null && [ -f "${ACTION_PATH}/bin/syncwright" ]; then
             echo "Built using Makefile"
@@ -122,12 +122,12 @@ runs:
           else
             cd "${WORKSPACE_PATH}"
             echo "Source build failed, trying installation script..."
-            
+
             # Priority 3: Use installation script (slower, but handles releases)
             INSTALL_SCRIPT="${ACTION_PATH}/scripts/install.sh"
             export GITHUB_WORKSPACE="${WORKSPACE_PATH}"
             export GITHUB_ACTION_PATH="${ACTION_PATH}"
-            
+
             if [ -f "$INSTALL_SCRIPT" ] && \
                (timeout 15s "$INSTALL_SCRIPT" 2>/dev/null || \
                 (command -v gtimeout >/dev/null 2>&1 && \
@@ -135,32 +135,32 @@ runs:
               echo "Installation script succeeded"
             else
               echo "Installation script failed or timed out, creating functional stub..."
-              
+
               # Priority 4: Create functional stub for testing (fastest fallback)
               cat > "$TARGET_BINARY" << 'STUB_EOF'
               #!/bin/bash
               case "$1" in
                 --version) echo "syncwright version 0.0.0-ci-stub" ;;
                 --help) echo "Usage: syncwright [command] [options]" ;;
-                validate) 
+                validate)
                   echo "Validation completed (CI stub mode)"
                   [ "$2" = "--verbose" ] && echo "Verbose validation output"
                   [ "$2" = "--comprehensive" ] && echo "Comprehensive validation output"
                   [ "$2" = "--post-merge" ] && echo "Post-merge validation output"
                   exit 0 ;;
-                detect) 
+                detect)
                   echo "Detection completed (CI stub mode)"
                   [ "$2" = "--format" ] && [ "$3" = "json" ] && echo '{"conflicts": []}'
                   exit 0 ;;
-                format) 
+                format)
                   echo "Format completed (CI stub mode)"
                   [ "$2" = "--dry-run" ] && echo "Dry run format output"
                   exit 0 ;;
-                resolve) 
+                resolve)
                   echo "Resolve completed (CI stub mode)"
                   [ "$2" = "--ai" ] && echo "AI resolution completed"
                   exit 0 ;;
-                *) 
+                *)
                   echo "Command $1 completed (CI stub mode)"
                   exit 0 ;;
               esac
@@ -171,12 +171,12 @@ runs:
           fi
         else
           echo "No source files found, trying installation script..."
-          
+
           # Priority 3: Use installation script for release binaries
           INSTALL_SCRIPT="${ACTION_PATH}/scripts/install.sh"
           export GITHUB_WORKSPACE="${WORKSPACE_PATH}"
           export GITHUB_ACTION_PATH="${ACTION_PATH}"
-          
+
           if [ -f "$INSTALL_SCRIPT" ] && \
              (timeout 15s "$INSTALL_SCRIPT" 2>/dev/null || \
               (command -v gtimeout >/dev/null 2>&1 && \
@@ -184,7 +184,7 @@ runs:
             echo "Installation script succeeded"
           else
             echo "Installation script failed, creating basic stub..."
-            
+
             # Final fallback: minimal stub
             echo '#!/bin/bash' > "$TARGET_BINARY"
             echo 'echo "Syncwright CI stub - command $1 completed"' >> "$TARGET_BINARY"
