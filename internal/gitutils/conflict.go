@@ -89,8 +89,13 @@ func isConflictStatus(status string) bool {
 func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
 	// Validate and sanitize file path to prevent command injection
 	cleanPath := filepath.Clean(filePath)
-	if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") {
+	if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") || strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") || strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") || strings.Contains(cleanPath, "$") {
 		return nil, fmt.Errorf("invalid file path: %s", filePath)
+	}
+
+	// Additional validation to ensure path contains only safe characters
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9._/\-]+$`, cleanPath); !matched {
+		return nil, fmt.Errorf("file path contains unsafe characters: %s", filePath)
 	}
 
 	cmd := exec.Command("git", "show", ":"+cleanPath)
@@ -116,10 +121,10 @@ func parseConflictMarkers(content string) ([]ConflictHunk, error) {
 	var hunks []ConflictHunk
 
 	parser := &conflictParser{
-		startMarker:  regexp.MustCompile(`^<{7}\s*(.*)$`), // <<<<<<< HEAD or <<<<<<< branch
+		startMarker:  regexp.MustCompile(`^<{7}\s*(.*)$`),  // <<<<<<< HEAD or <<<<<<< branch
 		middleMarker: regexp.MustCompile(`^={7}$`),         // =======
 		baseMarker:   regexp.MustCompile(`^\|{7}\s*(.*)$`), // ||||||| base (diff3 style)
-		endMarker:    regexp.MustCompile(`^>{7}\s*(.*)$`),   // >>>>>>> branch
+		endMarker:    regexp.MustCompile(`^>{7}\s*(.*)$`),  // >>>>>>> branch
 	}
 
 	i := 0

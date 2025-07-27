@@ -456,7 +456,7 @@ func (a *AIApplyCommand) outputResults(result *AIApplyResult) error {
 			return fmt.Errorf("failed to marshal results: %w", err)
 		}
 
-		err = os.WriteFile(a.options.OutputFile, data, 0644)
+		err = os.WriteFile(a.options.OutputFile, data, 0600)
 		if err != nil {
 			return fmt.Errorf("failed to write results to file: %w", err)
 		}

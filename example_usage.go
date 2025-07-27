@@ -108,7 +108,7 @@ func runAIApplyExample() {
 		log.Fatalf("Failed to serialize payload: %v", err)
 	}
 
-	err = os.WriteFile(payloadFile, payloadData, 0644)
+	err = os.WriteFile(payloadFile, payloadData, 0600)
 	if err != nil {
 		log.Fatalf("Failed to write payload file: %v", err)
 	}
@@ -149,7 +149,7 @@ func runManualTest() {
 // runGitStateTests tests git state detection
 func runGitStateTests(repoPath string) {
 	fmt.Println("\n--- Git State Tests ---")
-	
+
 	inMerge, err := gitutils.IsInMergeState(repoPath)
 	if err != nil {
 		fmt.Printf("Failed to check merge state: %v\n", err)
@@ -161,7 +161,7 @@ func runGitStateTests(repoPath string) {
 // runConflictDetectionTests tests conflict detection and payload building
 func runConflictDetectionTests(repoPath string) {
 	fmt.Println("\n--- Conflict Detection Tests ---")
-	
+
 	conflicts, err := gitutils.DetectConflicts(repoPath)
 	if err != nil {
 		fmt.Printf("Failed to detect conflicts: %v\n", err)
@@ -181,9 +181,9 @@ func runConflictDetectionTests(repoPath string) {
 // testPayloadBuilder tests the payload builder functionality
 func testPayloadBuilder(conflicts []gitutils.ConflictStatus, repoPath string) {
 	fmt.Println("\n--- Payload Builder Test ---")
-	
+
 	report := buildConflictReport(conflicts, repoPath)
-	
+
 	builder := payload.NewPayloadBuilder()
 	payloadResult, err := builder.BuildPayload(report)
 	if err != nil {
@@ -241,7 +241,7 @@ func processConflictFile(conflict gitutils.ConflictStatus, repoPath string) *git
 // runFileTypeDetectionTests tests file type detection
 func runFileTypeDetectionTests() {
 	fmt.Println("\n--- File Type Detection Test ---")
-	
+
 	testFiles := []string{
 		"main.go",
 		"package.json",
@@ -262,7 +262,7 @@ func runFileTypeDetectionTests() {
 // runFilterTests tests file filtering functionality
 func runFilterTests() {
 	fmt.Println("\n--- Filter Test ---")
-	
+
 	filters := createTestFilters()
 	testPaths := []string{
 		".env",

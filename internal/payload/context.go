@@ -183,7 +183,7 @@ func (pb *PayloadBuilder) extractBranchInfo(repoPath string) (BranchInfo, error)
 		info.MergeBranch = strings.TrimSpace(string(output))
 	}
 
-	// Get merge base
+	// Get merge base - using hardcoded safe values "HEAD" and "MERGE_HEAD"
 	cmd = exec.Command("git", "merge-base", "HEAD", "MERGE_HEAD")
 	cmd.Dir = repoPath
 	if output, err := cmd.Output(); err == nil {
@@ -213,6 +213,14 @@ func (pb *PayloadBuilder) extractCommitInfo(repoPath string) (CommitInfo, error)
 
 	// Get merge base commit
 	if info.OursCommit != "" && info.TheirsCommit != "" {
+		// Validate commit hashes to prevent command injection
+		if matched, _ := regexp.MatchString(`^[a-fA-F0-9]+$`, info.OursCommit); !matched {
+			return info, fmt.Errorf("invalid commit hash format: %s", info.OursCommit)
+		}
+		if matched, _ := regexp.MatchString(`^[a-fA-F0-9]+$`, info.TheirsCommit); !matched {
+			return info, fmt.Errorf("invalid commit hash format: %s", info.TheirsCommit)
+		}
+
 		cmd = exec.Command("git", "merge-base", info.OursCommit, info.TheirsCommit)
 		cmd.Dir = repoPath
 		if output, err := cmd.Output(); err == nil {

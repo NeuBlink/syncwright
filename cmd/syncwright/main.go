@@ -5,10 +5,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/NeuBlink/syncwright/internal/commands"
 	"github.com/NeuBlink/syncwright/internal/format"
 	"github.com/NeuBlink/syncwright/internal/iojson"
+	"github.com/spf13/cobra"
 )
 
 // Build information - set via ldflags during build

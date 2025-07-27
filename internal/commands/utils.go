@@ -230,112 +230,160 @@ func validateGoSyntax(lines []string) ValidationResult {
 	return result
 }
 
-// validateJSSyntax validates JavaScript/TypeScript syntax
-func validateJSSyntax(lines []string) ValidationResult {
-	result := ValidationResult{Valid: true}
+// bracketCounts holds the counts for different bracket types
+type bracketCounts struct {
+	braces   int
+	parens   int
+	brackets int
+}
 
-	openBraces := 0
-	openParens := 0
-	openBrackets := 0
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Count braces, parentheses, brackets (simplified)
-		for _, char := range trimmed {
-			switch char {
-			case '{':
-				openBraces++
-			case '}':
-				openBraces--
-			case '(':
-				openParens++
-			case ')':
-				openParens--
-			case '[':
-				openBrackets++
-			case ']':
-				openBrackets--
-			}
-		}
-
-		// Check for missing semicolons (simplified)
-		if trimmed != "" && !strings.HasSuffix(trimmed, ";") &&
-			!strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, "}") &&
-			!strings.Contains(trimmed, "//") && !strings.HasPrefix(trimmed, "//") {
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("Line %d: Possible missing semicolon", i+1))
+// countBrackets counts opening and closing brackets in a line
+func countBrackets(line string) bracketCounts {
+	counts := bracketCounts{}
+	for _, char := range line {
+		switch char {
+		case '{':
+			counts.braces++
+		case '}':
+			counts.braces--
+		case '(':
+			counts.parens++
+		case ')':
+			counts.parens--
+		case '[':
+			counts.brackets++
+		case ']':
+			counts.brackets--
 		}
 	}
+	return counts
+}
 
-	// Check for unbalanced brackets
-	if openBraces != 0 {
+// validateBracketBalance checks for unbalanced brackets and adds errors
+func validateBracketBalance(result *ValidationResult, counts bracketCounts) {
+	if counts.braces != 0 {
 		result.Valid = false
 		result.Errors = append(result.Errors, "Unbalanced braces")
 	}
-	if openParens != 0 {
+	if counts.parens != 0 {
 		result.Valid = false
 		result.Errors = append(result.Errors, "Unbalanced parentheses")
 	}
-	if openBrackets != 0 {
+	if counts.brackets != 0 {
 		result.Valid = false
 		result.Errors = append(result.Errors, "Unbalanced brackets")
 	}
+}
 
+// checkJSSemicolon checks for missing semicolons in JavaScript/TypeScript
+func checkJSSemicolon(trimmed string, lineNum int) string {
+	if trimmed != "" && !strings.HasSuffix(trimmed, ";") &&
+		!strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, "}") &&
+		!strings.Contains(trimmed, "//") && !strings.HasPrefix(trimmed, "//") {
+		return fmt.Sprintf("Line %d: Possible missing semicolon", lineNum)
+	}
+	return ""
+}
+
+// validateJSSyntax validates JavaScript/TypeScript syntax
+func validateJSSyntax(lines []string) ValidationResult {
+	result := ValidationResult{Valid: true}
+	totalCounts := bracketCounts{}
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		lineCounts := countBrackets(trimmed)
+		
+		// Accumulate bracket counts
+		totalCounts.braces += lineCounts.braces
+		totalCounts.parens += lineCounts.parens
+		totalCounts.brackets += lineCounts.brackets
+
+		// Check for missing semicolons
+		if warning := checkJSSemicolon(trimmed, i+1); warning != "" {
+			result.Warnings = append(result.Warnings, warning)
+		}
+	}
+
+	// Validate bracket balance
+	validateBracketBalance(&result, totalCounts)
 	return result
+}
+
+// checkPythonIndentation validates Python indentation
+func checkPythonIndentation(line string, lineNum int) string {
+	leadingSpaces := len(line) - len(strings.TrimLeft(line, " \t"))
+	if strings.TrimSpace(line) != "" {
+		if leadingSpaces%4 != 0 && leadingSpaces%2 != 0 {
+			return fmt.Sprintf("Line %d: Inconsistent indentation", lineNum)
+		}
+	}
+	return ""
+}
+
+// checkPythonColon checks for missing colons in Python control structures
+func checkPythonColon(trimmed string, lineNum int) string {
+	controlStructures := []string{"if ", "for ", "while ", "def ", "class "}
+	for _, structure := range controlStructures {
+		if strings.HasPrefix(trimmed, structure) {
+			if !strings.HasSuffix(trimmed, ":") {
+				return fmt.Sprintf("Line %d: Missing colon", lineNum)
+			}
+			break
+		}
+	}
+	return ""
+}
+
+// countPythonBrackets counts parentheses and brackets for Python
+func countPythonBrackets(line string) (parens, brackets int) {
+	for _, char := range line {
+		switch char {
+		case '(':
+			parens++
+		case ')':
+			parens--
+		case '[':
+			brackets++
+		case ']':
+			brackets--
+		}
+	}
+	return parens, brackets
 }
 
 // validatePythonSyntax validates Python syntax
 func validatePythonSyntax(lines []string) ValidationResult {
 	result := ValidationResult{Valid: true}
-
-	openParens := 0
-	openBrackets := 0
+	totalParens := 0
+	totalBrackets := 0
 
 	for i, line := range lines {
-		// Check indentation (simplified)
-		leadingSpaces := len(line) - len(strings.TrimLeft(line, " \t"))
-		if strings.TrimSpace(line) != "" {
-			if leadingSpaces%4 != 0 && leadingSpaces%2 != 0 {
-				result.Warnings = append(result.Warnings,
-					fmt.Sprintf("Line %d: Inconsistent indentation", i+1))
-			}
+		// Check indentation
+		if warning := checkPythonIndentation(line, i+1); warning != "" {
+			result.Warnings = append(result.Warnings, warning)
 		}
 
 		trimmed := strings.TrimSpace(line)
 
-		// Count parentheses, brackets
-		for _, char := range trimmed {
-			switch char {
-			case '(':
-				openParens++
-			case ')':
-				openParens--
-			case '[':
-				openBrackets++
-			case ']':
-				openBrackets--
-			}
-		}
+		// Count brackets
+		parens, brackets := countPythonBrackets(trimmed)
+		totalParens += parens
+		totalBrackets += brackets
 
 		// Check for missing colons
-		if strings.HasPrefix(trimmed, "if ") || strings.HasPrefix(trimmed, "for ") ||
-			strings.HasPrefix(trimmed, "while ") || strings.HasPrefix(trimmed, "def ") ||
-			strings.HasPrefix(trimmed, "class ") {
-			if !strings.HasSuffix(trimmed, ":") {
-				result.Valid = false
-				result.Errors = append(result.Errors,
-					fmt.Sprintf("Line %d: Missing colon", i+1))
-			}
+		if errMsg := checkPythonColon(trimmed, i+1); errMsg != "" {
+			result.Valid = false
+			result.Errors = append(result.Errors, errMsg)
 		}
 	}
 
 	// Check for unbalanced brackets
-	if openParens != 0 {
+	if totalParens != 0 {
 		result.Valid = false
 		result.Errors = append(result.Errors, "Unbalanced parentheses")
 	}
-	if openBrackets != 0 {
+	if totalBrackets != 0 {
 		result.Valid = false
 		result.Errors = append(result.Errors, "Unbalanced brackets")
 	}
@@ -343,59 +391,39 @@ func validatePythonSyntax(lines []string) ValidationResult {
 	return result
 }
 
+// checkJavaSemicolon checks for missing semicolons in Java
+func checkJavaSemicolon(trimmed string, lineNum int) string {
+	if trimmed != "" && !strings.HasSuffix(trimmed, ";") &&
+		!strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, "}") &&
+		!strings.Contains(trimmed, "//") && !strings.HasPrefix(trimmed, "//") &&
+		!strings.HasPrefix(trimmed, "package ") && !strings.HasPrefix(trimmed, "import ") {
+		return fmt.Sprintf("Line %d: Possible missing semicolon", lineNum)
+	}
+	return ""
+}
+
 // validateJavaSyntax validates Java syntax
 func validateJavaSyntax(lines []string) ValidationResult {
 	result := ValidationResult{Valid: true}
-
-	openBraces := 0
-	openParens := 0
-	openBrackets := 0
+	totalCounts := bracketCounts{}
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-
-		// Count braces, parentheses, brackets
-		for _, char := range trimmed {
-			switch char {
-			case '{':
-				openBraces++
-			case '}':
-				openBraces--
-			case '(':
-				openParens++
-			case ')':
-				openParens--
-			case '[':
-				openBrackets++
-			case ']':
-				openBrackets--
-			}
-		}
+		lineCounts := countBrackets(trimmed)
+		
+		// Accumulate bracket counts
+		totalCounts.braces += lineCounts.braces
+		totalCounts.parens += lineCounts.parens
+		totalCounts.brackets += lineCounts.brackets
 
 		// Check for missing semicolons
-		if trimmed != "" && !strings.HasSuffix(trimmed, ";") &&
-			!strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, "}") &&
-			!strings.Contains(trimmed, "//") && !strings.HasPrefix(trimmed, "//") &&
-			!strings.HasPrefix(trimmed, "package ") && !strings.HasPrefix(trimmed, "import ") {
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("Line %d: Possible missing semicolon", i+1))
+		if warning := checkJavaSemicolon(trimmed, i+1); warning != "" {
+			result.Warnings = append(result.Warnings, warning)
 		}
 	}
 
-	// Check for unbalanced brackets
-	if openBraces != 0 {
-		result.Valid = false
-		result.Errors = append(result.Errors, "Unbalanced braces")
-	}
-	if openParens != 0 {
-		result.Valid = false
-		result.Errors = append(result.Errors, "Unbalanced parentheses")
-	}
-	if openBrackets != 0 {
-		result.Valid = false
-		result.Errors = append(result.Errors, "Unbalanced brackets")
-	}
-
+	// Validate bracket balance
+	validateBracketBalance(&result, totalCounts)
 	return result
 }
 

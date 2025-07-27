@@ -162,7 +162,7 @@ func (v *ValidateCommand) printVerboseDetails(report *validate.ValidationReport)
 // printCommandResult prints details for a single command result
 func (v *ValidateCommand) printCommandResult(result validate.CommandResult) {
 	status := v.getCommandStatus(result)
-	
+
 	fmt.Fprintf(os.Stderr, "  %s [%s] - %s (%.2fs)\n",
 		result.Command.Name, status, result.Command.Description, result.Duration.Seconds())
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -64,6 +65,12 @@ func CommitChanges(message string) error {
 func GetRecentlyModifiedFiles(repoPath string, days int) ([]string, error) {
 	// Use git log to find files modified in the last N days
 	since := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
+
+	// Validate the since parameter format to prevent command injection
+	// Expected format: YYYY-MM-DD
+	if matched, _ := regexp.MatchString(`^\d{4}-\d{2}-\d{2}$`, since); !matched {
+		return nil, fmt.Errorf("invalid date format: %s", since)
+	}
 
 	cmd := exec.Command("git", "log", "--name-only", "--pretty=format:", "--since="+since)
 	cmd.Dir = repoPath

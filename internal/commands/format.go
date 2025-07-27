@@ -292,14 +292,14 @@ type fileFilter struct {
 // isFormattable checks if a file can be formatted based on its extension
 func (f *fileFilter) isFormattable(filePath string) bool {
 	ext := f.extractExtension(filePath)
-	
+
 	// Check if extension is supported
 	supported := f.availableExtensions[ext]
-	
+
 	// Apply include/exclude filters
 	supported = f.applyIncludeFilter(ext, supported)
 	supported = f.applyExcludeFilter(ext, supported)
-	
+
 	return supported
 }
 
@@ -317,7 +317,7 @@ func (f *fileFilter) applyIncludeFilter(ext string, currentSupported bool) bool 
 	if len(f.includeExtensions) == 0 {
 		return currentSupported
 	}
-	
+
 	for _, includeExt := range f.includeExtensions {
 		if ext == includeExt {
 			return currentSupported
@@ -331,7 +331,7 @@ func (f *fileFilter) applyExcludeFilter(ext string, currentSupported bool) bool 
 	if !currentSupported || len(f.excludeExtensions) == 0 {
 		return currentSupported
 	}
-	
+
 	for _, excludeExt := range f.excludeExtensions {
 		if ext == excludeExt {
 			return false
@@ -369,7 +369,7 @@ func (f *FormatCommand) outputResults(result *FormatResult) error {
 
 	// Write to file or stdout
 	if f.options.OutputFile != "" {
-		err = os.WriteFile(f.options.OutputFile, output, 0644)
+		err = os.WriteFile(f.options.OutputFile, output, 0600)
 		if err != nil {
 			return fmt.Errorf("failed to write to file %s: %w", f.options.OutputFile, err)
 		}
@@ -464,7 +464,7 @@ func (t *textOutputFormatter) formatAvailableFormatter(formatter format.Formatte
 	} else {
 		version = fmt.Sprintf(" (%s)", version)
 	}
-	
+
 	return []string{
 		fmt.Sprintf("  ✅ %s%s - %s", formatter.Name, version, formatter.Description),
 		fmt.Sprintf("     Extensions: %s", strings.Join(formatter.Extensions, ", ")),

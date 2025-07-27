@@ -3,6 +3,7 @@ package gitutils
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -238,7 +239,23 @@ func finalizeCurrentItems(currentFile *DiffFile, currentHunk *DiffHunk, files *[
 
 // GetFileAtRevision retrieves file content at a specific git revision
 func GetFileAtRevision(repoPath, filePath, revision string) ([]string, error) {
-	cmd := exec.Command("git", "show", revision+":"+filePath)
+	// Validate revision parameter to prevent command injection
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_\-]+$`, revision); !matched {
+		return nil, fmt.Errorf("invalid revision format: %s", revision)
+	}
+
+	// Validate and sanitize file path to prevent command injection
+	cleanPath := filepath.Clean(filePath)
+	if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") || strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") || strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") || strings.Contains(cleanPath, "$") {
+		return nil, fmt.Errorf("invalid file path: %s", filePath)
+	}
+
+	// Additional validation to ensure path contains only safe characters
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9._/\-]+$`, cleanPath); !matched {
+		return nil, fmt.Errorf("file path contains unsafe characters: %s", filePath)
+	}
+
+	cmd := exec.Command("git", "show", revision+":"+cleanPath)
 	cmd.Dir = repoPath
 
 	output, err := cmd.Output()

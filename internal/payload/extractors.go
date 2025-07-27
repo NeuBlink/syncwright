@@ -63,19 +63,19 @@ func (g *GoContextExtractor) handleImportBlock(trimmed string, inImportBlock *bo
 		*inImportBlock = true
 		return true
 	}
-	
+
 	if *inImportBlock {
 		if trimmed == ")" {
 			*inImportBlock = false
 			return true
 		}
-		
+
 		if strings.Contains(trimmed, `"`) {
 			g.extractImportPath(trimmed, imports)
 		}
 		return true
 	}
-	
+
 	return false
 }
 

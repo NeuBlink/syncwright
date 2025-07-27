@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -19,7 +20,7 @@ const (
 	SeverityError   = "error"
 	SeverityWarning = "warning"
 	SeverityInfo    = "info"
-	
+
 	ScriptBuild     = "build"
 	ScriptTest      = "test"
 	ScriptLint      = "lint"
@@ -846,6 +847,12 @@ func executeCommand(cmd ValidationCommand, timeoutSeconds int) CommandResult {
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
+
+	// Validate command to prevent command injection
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_\-]+$`, cmd.Command); !matched {
+		result.Error = fmt.Sprintf("Invalid command format: %s", cmd.Command)
+		return result
+	}
 
 	// Create command
 	execCmd := exec.CommandContext(ctx, cmd.Command, cmd.Args...)

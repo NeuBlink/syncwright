@@ -87,7 +87,7 @@ func applyFileResolutions(repoPath, filePath string, resolutions []ConflictResol
 
 	// Write back to file
 	newContent := strings.Join(lines, "\n")
-	err = os.WriteFile(fullPath, []byte(newContent), 0644)
+	err = os.WriteFile(fullPath, []byte(newContent), 0600)
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
@@ -287,7 +287,7 @@ func CreateBackup(repoPath, filePath string) error {
 		return fmt.Errorf("failed to read file for backup: %w", err)
 	}
 
-	err = os.WriteFile(backupPath, content, 0644)
+	err = os.WriteFile(backupPath, content, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create backup: %w", err)
 	}
@@ -305,7 +305,7 @@ func RestoreBackup(repoPath, filePath string) error {
 		return fmt.Errorf("failed to read backup file: %w", err)
 	}
 
-	err = os.WriteFile(fullPath, content, 0644)
+	err = os.WriteFile(fullPath, content, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to restore from backup: %w", err)
 	}

@@ -76,7 +76,7 @@ func WriteFile(filename string, v interface{}) error {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
-	if err := os.WriteFile(filename, data, 0644); err != nil {
+	if err := os.WriteFile(filename, data, 0600); err != nil {
 		return fmt.Errorf("failed to write file %s: %w", filename, err)
 	}
 

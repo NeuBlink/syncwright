@@ -14,7 +14,7 @@ import (
 const (
 	// OutputFormatJSON represents JSON output format
 	OutputFormatJSON = "json"
-	// OutputFormatText represents text output format  
+	// OutputFormatText represents text output format
 	OutputFormatText = "text"
 )
 
@@ -191,7 +191,7 @@ func (d *DetectCommand) outputResults(result *DetectResult) error {
 
 	// Write to file or stdout
 	if d.options.OutputFile != "" {
-		err = os.WriteFile(d.options.OutputFile, output, 0644)
+		err = os.WriteFile(d.options.OutputFile, output, 0600)
 		if err != nil {
 			return fmt.Errorf("failed to write to file %s: %w", d.options.OutputFile, err)
 		}
