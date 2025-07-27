@@ -1,8 +1,6 @@
 ---
 name: 'Syncwright'
-description: >-
-  AI-powered Git merge conflict resolution tool that automatically detects,
-  analyzes, and resolves merge conflicts using advanced language models
+description: 'AI-powered Git merge conflict resolution using advanced language models for automated conflict detection and resolution'
 author: 'Syncwright Team'
 
 # GitHub Marketplace metadata
