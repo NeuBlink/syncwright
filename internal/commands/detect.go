@@ -27,9 +27,14 @@ type DetectOptions struct {
 	MaxContextLines int
 	Verbose         bool
 	ExcludePatterns []string
+<<<<<<< HEAD
 	// Main branch: Add performance metrics collection
 	EnableMetrics   bool
 	MetricsFile     string
+=======
+	// Feature branch: Add timeout support for long-running operations
+	TimeoutSeconds  int
+>>>>>>> feature/add-logging-enhancement
 }
 
 // DetectResult represents the result of conflict detection
@@ -65,8 +70,13 @@ func NewDetectCommand(options DetectOptions) *DetectCommand {
 	if options.MaxContextLines == 0 {
 		options.MaxContextLines = 5
 	}
+<<<<<<< HEAD
 	if options.MetricsFile == "" && options.EnableMetrics {
 		options.MetricsFile = "syncwright-metrics.json" // Default metrics file
+=======
+	if options.TimeoutSeconds == 0 {
+		options.TimeoutSeconds = 30 // Default timeout for operations
+>>>>>>> feature/add-logging-enhancement
 	}
 	if options.RepoPath == "" {
 		if wd, err := os.Getwd(); err == nil {
