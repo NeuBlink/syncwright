@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/NeuBlink/syncwright/internal/gitutils"
 	"github.com/NeuBlink/syncwright/internal/payload"
@@ -27,6 +28,11 @@ type DetectOptions struct {
 	MaxContextLines int
 	Verbose         bool
 	ExcludePatterns []string
+	// Timeout support for long-running detection operations
+	TimeoutSeconds  int
+	// Retry mechanism for failed operations
+	MaxRetries      int
+	RetryDelay      time.Duration
 }
 
 // DetectResult represents the result of conflict detection
