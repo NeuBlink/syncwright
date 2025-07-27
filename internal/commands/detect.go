@@ -5,9 +5,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/NeuBlink/syncwright/internal/gitutils"
 	"github.com/NeuBlink/syncwright/internal/payload"
+)
+
+const (
+	// OutputFormatJSON represents JSON output format
+	OutputFormatJSON = "json"
+	// OutputFormatText represents text output format  
+	OutputFormatText = "text"
 )
 
 // DetectOptions contains options for the detect command
@@ -49,7 +57,7 @@ type DetectCommand struct {
 func NewDetectCommand(options DetectOptions) *DetectCommand {
 	// Set defaults
 	if options.OutputFormat == "" {
-		options.OutputFormat = "json"
+		options.OutputFormat = OutputFormatJSON
 	}
 	if options.MaxContextLines == 0 {
 		options.MaxContextLines = 5
@@ -170,12 +178,12 @@ func (d *DetectCommand) outputResults(result *DetectResult) error {
 	var err error
 
 	switch d.options.OutputFormat {
-	case "json":
+	case OutputFormatJSON:
 		output, err = json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal JSON: %w", err)
 		}
-	case "text":
+	case OutputFormatText:
 		output = d.formatTextOutput(result)
 	default:
 		return fmt.Errorf("unsupported output format: %s", d.options.OutputFormat)
@@ -206,65 +214,108 @@ func (d *DetectCommand) formatTextOutput(result *DetectResult) []byte {
 
 	if !result.Success {
 		output = append(output, fmt.Sprintf("❌ Error: %s", result.ErrorMessage))
-		return []byte(fmt.Sprintf("%s\n", fmt.Sprintf("%s", output)))
+		return d.joinOutput(output)
 	}
 
-	output = append(output, fmt.Sprintf("Repository: %s", result.Summary.RepoPath))
-	output = append(output, fmt.Sprintf("In merge state: %t", result.Summary.InMergeState))
-	output = append(output, "")
+	output = d.addBasicInfo(output, result)
 
 	if !result.Summary.InMergeState {
 		output = append(output, "✅ No conflicts detected - repository is not in merge state")
-		return []byte(fmt.Sprintf("%s\n", fmt.Sprintf("%s", output)))
+		return d.joinOutput(output)
 	}
 
+	output = d.addSummarySection(output, result)
+	output = d.addConflictedFilesSection(output, result)
+	output = d.addExcludedFilesSection(output, result)
+	output = d.addNextStepsSection(output, result)
+
+	return d.joinOutput(output)
+}
+
+// addBasicInfo adds repository and merge state information
+func (d *DetectCommand) addBasicInfo(output []string, result *DetectResult) []string {
+	output = append(output, fmt.Sprintf("Repository: %s", result.Summary.RepoPath))
+	output = append(output, fmt.Sprintf("In merge state: %t", result.Summary.InMergeState))
+	output = append(output, "")
+	return output
+}
+
+// addSummarySection adds the summary statistics
+func (d *DetectCommand) addSummarySection(output []string, result *DetectResult) []string {
 	output = append(output, "📊 Summary:")
 	output = append(output, fmt.Sprintf("  Total conflicted files: %d", result.Summary.TotalFiles))
 	output = append(output, fmt.Sprintf("  Total conflicts: %d", result.Summary.TotalConflicts))
 	output = append(output, fmt.Sprintf("  Processable files: %d", result.Summary.ProcessableFiles))
 	output = append(output, fmt.Sprintf("  Excluded files: %d", result.Summary.ExcludedFiles))
 	output = append(output, "")
+	return output
+}
 
-	if result.ConflictPayload != nil && len(result.ConflictPayload.Files) > 0 {
-		output = append(output, "📁 Conflicted Files:")
-		for _, file := range result.ConflictPayload.Files {
-			output = append(output, fmt.Sprintf("  %s (%s)", file.Path, file.Language))
-			output = append(output, fmt.Sprintf("    Conflicts: %d", len(file.Conflicts)))
+// addConflictedFilesSection adds information about conflicted files
+func (d *DetectCommand) addConflictedFilesSection(output []string, result *DetectResult) []string {
+	if result.ConflictPayload == nil || len(result.ConflictPayload.Files) == 0 {
+		return output
+	}
 
-			if d.options.Verbose {
-				for i, conflict := range file.Conflicts {
-					output = append(output, fmt.Sprintf("      Conflict %d: lines %d-%d (%s)",
-						i+1, conflict.StartLine, conflict.EndLine, conflict.ConflictType))
-				}
-			}
+	output = append(output, "📁 Conflicted Files:")
+	for _, file := range result.ConflictPayload.Files {
+		output = append(output, fmt.Sprintf("  %s (%s)", file.Path, file.Language))
+		output = append(output, fmt.Sprintf("    Conflicts: %d", len(file.Conflicts)))
+
+		if d.options.Verbose {
+			output = d.addVerboseConflictDetails(output, file.Conflicts)
+		}
+	}
+	output = append(output, "")
+	return output
+}
+
+// addVerboseConflictDetails adds detailed conflict information when verbose mode is enabled
+func (d *DetectCommand) addVerboseConflictDetails(output []string, conflicts []payload.ConflictHunk) []string {
+	for i, conflict := range conflicts {
+		output = append(output, fmt.Sprintf("      Conflict %d: lines %d-%d (%s)",
+			i+1, conflict.StartLine, conflict.EndLine, conflict.ConflictType))
+	}
+	return output
+}
+
+// addExcludedFilesSection adds information about excluded files
+func (d *DetectCommand) addExcludedFilesSection(output []string, result *DetectResult) []string {
+	if result.ConflictReport == nil || len(result.ConflictReport.ConflictedFiles) == 0 || !d.options.Verbose {
+		return output
+	}
+
+	excludedFiles := d.findExcludedFiles(result)
+	if len(excludedFiles) > 0 {
+		output = append(output, "🚫 Excluded Files:")
+		for _, file := range excludedFiles {
+			output = append(output, fmt.Sprintf("  %s", file))
 		}
 		output = append(output, "")
 	}
+	return output
+}
 
-	if result.ConflictReport != nil && len(result.ConflictReport.ConflictedFiles) > 0 {
-		excludedFiles := []string{}
-		for _, reportFile := range result.ConflictReport.ConflictedFiles {
-			found := false
-			for _, payloadFile := range result.ConflictPayload.Files {
-				if reportFile.Path == payloadFile.Path {
-					found = true
-					break
-				}
-			}
-			if !found {
-				excludedFiles = append(excludedFiles, reportFile.Path)
+// findExcludedFiles identifies files that were excluded from processing
+func (d *DetectCommand) findExcludedFiles(result *DetectResult) []string {
+	var excludedFiles []string
+	for _, reportFile := range result.ConflictReport.ConflictedFiles {
+		found := false
+		for _, payloadFile := range result.ConflictPayload.Files {
+			if reportFile.Path == payloadFile.Path {
+				found = true
+				break
 			}
 		}
-
-		if len(excludedFiles) > 0 && d.options.Verbose {
-			output = append(output, "🚫 Excluded Files:")
-			for _, file := range excludedFiles {
-				output = append(output, fmt.Sprintf("  %s", file))
-			}
-			output = append(output, "")
+		if !found {
+			excludedFiles = append(excludedFiles, reportFile.Path)
 		}
 	}
+	return excludedFiles
+}
 
+// addNextStepsSection adds next steps information
+func (d *DetectCommand) addNextStepsSection(output []string, result *DetectResult) []string {
 	if result.ConflictPayload != nil {
 		output = append(output, "🔧 Next Steps:")
 		output = append(output, "  1. Review the conflicts above")
@@ -273,15 +324,19 @@ func (d *DetectCommand) formatTextOutput(result *DetectResult) []byte {
 		output = append(output, "  4. Test your changes")
 		output = append(output, "  5. Commit the resolved conflicts")
 	}
+	return output
+}
 
-	return []byte(fmt.Sprintf("%s\n", fmt.Sprintf("%s", output)))
+// joinOutput joins the output lines into a single byte array
+func (d *DetectCommand) joinOutput(output []string) []byte {
+	return []byte(fmt.Sprintf("%s\n", strings.Join(output, "\n")))
 }
 
 // DetectConflicts is a convenience function for simple conflict detection
 func DetectConflicts(repoPath string) (*DetectResult, error) {
 	options := DetectOptions{
 		RepoPath:     repoPath,
-		OutputFormat: "json",
+		OutputFormat: OutputFormatJSON,
 		Verbose:      false,
 	}
 
@@ -293,7 +348,7 @@ func DetectConflicts(repoPath string) (*DetectResult, error) {
 func DetectConflictsVerbose(repoPath string, outputFile string) (*DetectResult, error) {
 	options := DetectOptions{
 		RepoPath:     repoPath,
-		OutputFormat: "json",
+		OutputFormat: OutputFormatJSON,
 		OutputFile:   outputFile,
 		Verbose:      true,
 	}
@@ -306,7 +361,7 @@ func DetectConflictsVerbose(repoPath string, outputFile string) (*DetectResult, 
 func DetectConflictsText(repoPath string) (*DetectResult, error) {
 	options := DetectOptions{
 		RepoPath:     repoPath,
-		OutputFormat: "text",
+		OutputFormat: OutputFormatText,
 		Verbose:      true,
 	}
 

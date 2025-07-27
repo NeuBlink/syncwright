@@ -174,57 +174,94 @@ func ExtractConflictContent(filePath, repoPath string) (map[int]ConflictContent,
 	conflicts := make(map[int]ConflictContent)
 
 	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-
-		// Look for conflict start marker
-		if strings.HasPrefix(line, "<<<<<<<") {
-			conflict := ConflictContent{
-				StartLine:   i + 1, // 1-based
-				StartMarker: line,
+		if strings.HasPrefix(lines[i], "<<<<<<<") {
+			conflict, newIndex := extractSingleConflict(lines, i)
+			if conflict != nil {
+				conflicts[conflict.StartLine] = *conflict
 			}
-
-			i++ // Move past start marker
-
-			// Collect "ours" lines
-			for i < len(lines) && !strings.HasPrefix(lines[i], "=======") && !strings.HasPrefix(lines[i], "|||||||") {
-				conflict.OursLines = append(conflict.OursLines, lines[i])
-				i++
-			}
-
-			// Check for base marker (diff3 style)
-			if i < len(lines) && strings.HasPrefix(lines[i], "|||||||") {
-				conflict.BaseMarker = lines[i]
-				i++ // Move past base marker
-
-				// Collect base lines
-				for i < len(lines) && !strings.HasPrefix(lines[i], "=======") {
-					conflict.BaseLines = append(conflict.BaseLines, lines[i])
-					i++
-				}
-			}
-
-			// Should be at middle marker
-			if i < len(lines) && strings.HasPrefix(lines[i], "=======") {
-				conflict.MiddleMarker = lines[i]
-				i++ // Move past middle marker
-
-				// Collect "theirs" lines
-				for i < len(lines) && !strings.HasPrefix(lines[i], ">>>>>>>") {
-					conflict.TheirsLines = append(conflict.TheirsLines, lines[i])
-					i++
-				}
-
-				// Should be at end marker
-				if i < len(lines) && strings.HasPrefix(lines[i], ">>>>>>>") {
-					conflict.EndMarker = lines[i]
-					conflict.EndLine = i + 1 // 1-based
-					conflicts[conflict.StartLine] = conflict
-				}
-			}
+			i = newIndex
 		}
 	}
 
 	return conflicts, nil
+}
+
+// extractSingleConflict extracts a single conflict starting at the given index
+func extractSingleConflict(lines []string, startIndex int) (*ConflictContent, int) {
+	if startIndex >= len(lines) {
+		return nil, startIndex
+	}
+
+	conflict := ConflictContent{
+		StartLine:   startIndex + 1, // 1-based
+		StartMarker: lines[startIndex],
+	}
+
+	i := startIndex + 1 // Move past start marker
+
+	// Collect "ours" lines
+	i = collectOursLines(lines, i, &conflict)
+
+	// Check for base marker (diff3 style)
+	i = collectBaseLines(lines, i, &conflict)
+
+	// Process middle marker and collect "theirs" lines
+	i = collectTheirsLines(lines, i, &conflict)
+
+	// Check for end marker
+	if i < len(lines) && strings.HasPrefix(lines[i], ">>>>>>>") {
+		conflict.EndMarker = lines[i]
+		conflict.EndLine = i + 1 // 1-based
+		return &conflict, i
+	}
+
+	// Invalid conflict - return nil
+	return nil, i
+}
+
+// collectOursLines collects lines in the "ours" section
+func collectOursLines(lines []string, startIndex int, conflict *ConflictContent) int {
+	i := startIndex
+	for i < len(lines) && !isConflictMarker(lines[i]) {
+		conflict.OursLines = append(conflict.OursLines, lines[i])
+		i++
+	}
+	return i
+}
+
+// collectBaseLines collects lines in the base section (diff3 style)
+func collectBaseLines(lines []string, startIndex int, conflict *ConflictContent) int {
+	i := startIndex
+	if i < len(lines) && strings.HasPrefix(lines[i], "|||||||") {
+		conflict.BaseMarker = lines[i]
+		i++ // Move past base marker
+
+		for i < len(lines) && !strings.HasPrefix(lines[i], "=======") {
+			conflict.BaseLines = append(conflict.BaseLines, lines[i])
+			i++
+		}
+	}
+	return i
+}
+
+// collectTheirsLines collects lines in the "theirs" section
+func collectTheirsLines(lines []string, startIndex int, conflict *ConflictContent) int {
+	i := startIndex
+	if i < len(lines) && strings.HasPrefix(lines[i], "=======") {
+		conflict.MiddleMarker = lines[i]
+		i++ // Move past middle marker
+
+		for i < len(lines) && !strings.HasPrefix(lines[i], ">>>>>>>") {
+			conflict.TheirsLines = append(conflict.TheirsLines, lines[i])
+			i++
+		}
+	}
+	return i
+}
+
+// isConflictMarker checks if a line is a conflict marker
+func isConflictMarker(line string) bool {
+	return strings.HasPrefix(line, "=======") || strings.HasPrefix(line, "|||||||")
 }
 
 // ConflictContent represents the detailed content of a conflict

@@ -112,11 +112,44 @@ func NewAIApplyCommand(options AIApplyOptions) *AIApplyCommand {
 func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 	result := &AIApplyResult{}
 
+	// Step 1: Load and validate input
+	conflictPayload, err := a.prepareInput(result)
+	if err != nil {
+		return result, err
+	}
+
+	// Step 2: Get AI resolutions
+	aiResponse, err := a.getAIResolutions(conflictPayload, result)
+	if err != nil {
+		return result, err
+	}
+
+	// Step 3: Process and filter resolutions
+	filteredResolutions := a.processResolutions(aiResponse, result)
+
+	// Step 4: Apply resolutions if appropriate
+	err = a.applyResolutionsIfNeeded(filteredResolutions, result)
+	if err != nil {
+		return result, err
+	}
+
+	// Step 5: Finalize results
+	result.ProcessedFiles = len(conflictPayload.Files)
+	if err := a.outputResults(result); err != nil {
+		result.ErrorMessage = fmt.Sprintf("Failed to output results: %v", err)
+		return result, err
+	}
+
+	return result, nil
+}
+
+// prepareInput loads payload and validates API key
+func (a *AIApplyCommand) prepareInput(result *AIApplyResult) (*payload.ConflictPayload, error) {
 	// Load payload
 	conflictPayload, err := a.loadPayload()
 	if err != nil {
 		result.ErrorMessage = fmt.Sprintf("Failed to load payload: %v", err)
-		return result, err
+		return nil, err
 	}
 
 	if a.options.Verbose {
@@ -128,7 +161,7 @@ func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 		a.options.APIKey = os.Getenv("CLAUDE_API_KEY")
 		if a.options.APIKey == "" {
 			result.ErrorMessage = "API key not provided. Set CLAUDE_API_KEY environment variable or use --api-key flag"
-			return result, fmt.Errorf("missing API key")
+			return nil, fmt.Errorf("missing API key")
 		}
 	}
 
@@ -136,22 +169,26 @@ func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 	if a.options.BackupFiles {
 		if err := a.createBackups(conflictPayload); err != nil {
 			result.ErrorMessage = fmt.Sprintf("Failed to create backups: %v", err)
-			return result, err
+			return nil, err
 		}
 	}
 
-	// Send to AI for resolution
+	return conflictPayload, nil
+}
+
+// getAIResolutions sends payload to AI and gets response
+func (a *AIApplyCommand) getAIResolutions(conflictPayload *payload.ConflictPayload, result *AIApplyResult) (*AIResolveResponse, error) {
 	aiResponse, err := a.sendToAI(conflictPayload)
 	if err != nil {
 		result.ErrorMessage = fmt.Sprintf("Failed to get AI resolution: %v", err)
-		return result, err
+		return nil, err
 	}
 
 	result.AIResponse = aiResponse
 
 	if !aiResponse.Success {
 		result.ErrorMessage = fmt.Sprintf("AI resolution failed: %s", aiResponse.ErrorMessage)
-		return result, fmt.Errorf("AI resolution failed")
+		return nil, fmt.Errorf("AI resolution failed")
 	}
 
 	if a.options.Verbose {
@@ -159,7 +196,11 @@ func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 			len(aiResponse.Resolutions), aiResponse.OverallConfidence)
 	}
 
-	// Filter resolutions by confidence
+	return aiResponse, nil
+}
+
+// processResolutions filters resolutions by confidence
+func (a *AIApplyCommand) processResolutions(aiResponse *AIResolveResponse, result *AIApplyResult) []gitutils.ConflictResolution {
 	filteredResolutions := a.filterResolutionsByConfidence(aiResponse.Resolutions)
 	result.Resolutions = filteredResolutions
 	result.SkippedResolutions = len(aiResponse.Resolutions) - len(filteredResolutions)
@@ -169,58 +210,69 @@ func (a *AIApplyCommand) Execute() (*AIApplyResult, error) {
 			result.SkippedResolutions, a.options.MinConfidence)
 	}
 
-	// Apply resolutions if not dry run
-	if !a.options.DryRun && len(filteredResolutions) > 0 {
-		if a.options.AutoApply {
-			applicationResult, err := gitutils.ApplyResolutions(a.options.RepoPath, filteredResolutions)
-			if err != nil {
-				result.ErrorMessage = fmt.Sprintf("Failed to apply resolutions: %v", err)
-				return result, err
-			}
+	return filteredResolutions
+}
 
-			result.ApplicationResult = applicationResult
-			result.AppliedResolutions = applicationResult.AppliedCount
-			result.FailedResolutions = applicationResult.FailedCount
-			result.Success = applicationResult.Success
+// applyResolutionsIfNeeded applies resolutions based on options
+func (a *AIApplyCommand) applyResolutionsIfNeeded(filteredResolutions []gitutils.ConflictResolution, result *AIApplyResult) error {
+	if a.options.DryRun {
+		result.Success = true
+		fmt.Printf("Dry run: Would apply %d resolutions\n", len(filteredResolutions))
+		return nil
+	}
 
-			if a.options.Verbose {
-				fmt.Printf("Applied %d resolutions, %d failed\n",
-					result.AppliedResolutions, result.FailedResolutions)
-			}
-		} else {
-			// Interactive mode - ask for confirmation
-			if a.askForConfirmation(filteredResolutions) {
-				applicationResult, err := gitutils.ApplyResolutions(a.options.RepoPath, filteredResolutions)
-				if err != nil {
-					result.ErrorMessage = fmt.Sprintf("Failed to apply resolutions: %v", err)
-					return result, err
-				}
+	if len(filteredResolutions) == 0 {
+		result.Success = true
+		return nil
+	}
 
-				result.ApplicationResult = applicationResult
-				result.AppliedResolutions = applicationResult.AppliedCount
-				result.FailedResolutions = applicationResult.FailedCount
-				result.Success = applicationResult.Success
-			} else {
-				result.Success = true
-				fmt.Println("Resolution application cancelled by user")
-			}
+	if a.options.AutoApply {
+		return a.applyResolutionsAutomatically(filteredResolutions, result)
+	}
+
+	return a.applyResolutionsInteractively(filteredResolutions, result)
+}
+
+// applyResolutionsAutomatically applies resolutions without user interaction
+func (a *AIApplyCommand) applyResolutionsAutomatically(filteredResolutions []gitutils.ConflictResolution, result *AIApplyResult) error {
+	applicationResult, err := gitutils.ApplyResolutions(a.options.RepoPath, filteredResolutions)
+	if err != nil {
+		result.ErrorMessage = fmt.Sprintf("Failed to apply resolutions: %v", err)
+		return err
+	}
+
+	result.ApplicationResult = applicationResult
+	result.AppliedResolutions = applicationResult.AppliedCount
+	result.FailedResolutions = applicationResult.FailedCount
+	result.Success = applicationResult.Success
+
+	if a.options.Verbose {
+		fmt.Printf("Applied %d resolutions, %d failed\n",
+			result.AppliedResolutions, result.FailedResolutions)
+	}
+
+	return nil
+}
+
+// applyResolutionsInteractively applies resolutions with user confirmation
+func (a *AIApplyCommand) applyResolutionsInteractively(filteredResolutions []gitutils.ConflictResolution, result *AIApplyResult) error {
+	if a.askForConfirmation(filteredResolutions) {
+		applicationResult, err := gitutils.ApplyResolutions(a.options.RepoPath, filteredResolutions)
+		if err != nil {
+			result.ErrorMessage = fmt.Sprintf("Failed to apply resolutions: %v", err)
+			return err
 		}
+
+		result.ApplicationResult = applicationResult
+		result.AppliedResolutions = applicationResult.AppliedCount
+		result.FailedResolutions = applicationResult.FailedCount
+		result.Success = applicationResult.Success
 	} else {
 		result.Success = true
-		if a.options.DryRun {
-			fmt.Printf("Dry run: Would apply %d resolutions\n", len(filteredResolutions))
-		}
+		fmt.Println("Resolution application cancelled by user")
 	}
 
-	result.ProcessedFiles = len(conflictPayload.Files)
-
-	// Output results
-	if err := a.outputResults(result); err != nil {
-		result.ErrorMessage = fmt.Sprintf("Failed to output results: %v", err)
-		return result, err
-	}
-
-	return result, nil
+	return nil
 }
 
 // loadPayload loads the conflict payload from file or stdin

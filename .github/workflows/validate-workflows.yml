@@ -1,3 +1,4 @@
+---
 name: Validate Workflows
 
 on:
@@ -32,7 +33,7 @@ jobs:
       - name: Validate workflow YAML files
         run: |
           echo "Validating GitHub Actions workflow files..."
-          
+
           # Create a simple yamllint config that focuses on syntax errors only
           cat > .yamllint.yml << 'EOF'
           extends: default
@@ -49,7 +50,7 @@ jobs:
             braces: disable
             indentation: disable
           EOF
-          
+
           # Validate all YAML files
           find .github/workflows -name "*.yml" -o -name "*.yaml" | while read -r workflow; do
             echo "Validating $workflow"
@@ -80,13 +81,14 @@ jobs:
 
       - name: Install yq for YAML parsing
         run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
 
       - name: Validate action.yml structure
         run: |
           echo "Validating action.yml structure..."
-          
+
           # Check required top-level fields
           echo "Checking for 'name' field..."
           if yq eval 'has("name")' action.yml | grep -q "true"; then
@@ -95,7 +97,7 @@ jobs:
             echo "❌ Missing required field: name"
             exit 1
           fi
-          
+
           echo "Checking for 'description' field..."
           if yq eval 'has("description")' action.yml | grep -q "true"; then
             echo "✅ Found required field: description"
@@ -103,7 +105,7 @@ jobs:
             echo "❌ Missing required field: description"
             exit 1
           fi
-          
+
           echo "Checking for 'runs' field..."
           if yq eval 'has("runs")' action.yml | grep -q "true"; then
             echo "✅ Found required field: runs"
@@ -111,7 +113,7 @@ jobs:
             echo "❌ Missing required field: runs"
             exit 1
           fi
-          
+
           # Check branding for marketplace
           echo "Checking for 'branding' field..."
           if yq eval 'has("branding")' action.yml | grep -q "true"; then
@@ -129,7 +131,7 @@ jobs:
       - name: Check file references
         run: |
           echo "Checking file references in action.yml..."
-          
+
           # Check that referenced scripts exist
           if grep -q "scripts/install.sh" action.yml; then
             if [ ! -f "scripts/install.sh" ]; then
@@ -146,7 +148,7 @@ jobs:
       - name: Validate inputs and outputs
         run: |
           echo "Validating action inputs and outputs..."
-          
+
           # Check if inputs section exists and has valid structure
           if yq eval 'has("inputs")' action.yml | grep -q "true"; then
             echo "✅ Found inputs section"
@@ -156,8 +158,8 @@ jobs:
           else
             echo "ℹ️  No inputs section found"
           fi
-          
-          # Check if outputs section exists and has valid structure  
+
+          # Check if outputs section exists and has valid structure
           if yq eval 'has("outputs")' action.yml | grep -q "true"; then
             echo "✅ Found outputs section"
             # Basic validation that outputs exist - detailed validation would be complex in shell
@@ -170,17 +172,17 @@ jobs:
       - name: Validate composite action steps
         run: |
           echo "Validating composite action steps..."
-          
+
           # Check that all steps have proper shell specification
           if ! grep -q "shell: bash" action.yml; then
             echo "❌ Missing shell specification in composite action"
             exit 1
           fi
-          
+
           # Count the number of shell specifications vs steps
           shell_count=$(grep -c "shell: bash" action.yml)
           step_count=$(yq eval '.runs.steps | length' action.yml)
-          
+
           if [ "$shell_count" -eq "$step_count" ]; then
             echo "✅ All $step_count steps have proper shell specification"
           else
@@ -197,16 +199,16 @@ jobs:
       - name: Check workflow permissions
         run: |
           echo "Checking workflow permissions..."
-          
+
           for workflow in .github/workflows/*.yml; do
             echo "Checking permissions in $workflow"
-            
+
             if grep -q "permissions:" "$workflow"; then
               # Check for overly broad permissions
               if grep -A 10 "permissions:" "$workflow" | grep -q "write-all"; then
                 echo "⚠️  Warning: $workflow uses write-all permissions"
               fi
-              
+
               # Check for contents: write usage
               if grep -A 10 "permissions:" "$workflow" | grep -q "contents: write"; then
                 if grep -q "release\|tag\|commit\|push" "$workflow"; then
@@ -215,7 +217,7 @@ jobs:
                   echo "⚠️  Warning: $workflow has contents: write but may not need it"
                 fi
               fi
-              
+
               echo "✅ Permissions in $workflow reviewed"
             else
               echo "ℹ️  No explicit permissions in $workflow (using defaults)"
@@ -225,13 +227,13 @@ jobs:
       - name: Check secrets usage
         run: |
           echo "Checking secrets usage in workflows..."
-          
+
           # Find all secret references
           if grep -r "secrets\." .github/workflows/ > /tmp/secret_refs.txt; then
             echo "Found secret references:"
             while read -r line; do
               echo "  $line"
-              
+
               # Check for common security patterns
               if echo "$line" | grep -q "secrets\.GITHUB_TOKEN"; then
                 echo "    ✅ Using built-in GITHUB_TOKEN"
@@ -246,24 +248,26 @@ jobs:
       - name: Security scan
         run: |
           echo "Scanning workflows for security issues..."
-          
+
           # Check for potential script injection vulnerabilities
-          if grep -r "github.event" .github/workflows/ | grep -v "github.event.inputs" > /tmp/event_usage.txt; then
+          if grep -r "github.event" .github/workflows/ | \
+             grep -v "github.event.inputs" > /tmp/event_usage.txt; then
             if [ -s /tmp/event_usage.txt ]; then
               echo "⚠️  Warning: Direct use of github.event data detected"
               echo "    Consider validating or sanitizing user inputs"
               cat /tmp/event_usage.txt
             fi
           fi
-          
+
           # Check for hardcoded secrets
-          if grep -ri "password\|token\|key" .github/workflows/ | grep -v "secrets\." > /tmp/hardcoded.txt; then
+          if grep -ri "password\|token\|key" .github/workflows/ | \
+             grep -v "secrets\." > /tmp/hardcoded.txt; then
             if [ -s /tmp/hardcoded.txt ]; then
               echo "⚠️  Warning: Potential hardcoded secrets detected"
               cat /tmp/hardcoded.txt
             fi
           fi
-          
+
           # Check for HTTP downloads
           if grep -r "http://" .github/workflows/ > /tmp/http_usage.txt; then
             if [ -s /tmp/http_usage.txt ]; then
@@ -271,7 +275,7 @@ jobs:
               cat /tmp/http_usage.txt
             fi
           fi
-          
+
           echo "✅ Security scan completed"
 
   validate-marketplace:
@@ -283,15 +287,16 @@ jobs:
 
       - name: Install yq for YAML parsing
         run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
 
       - name: Check required files
         run: |
           echo "Checking GitHub Marketplace requirements..."
-          
+
           required_files="README.md LICENSE action.yml"
-          
+
           for file in $required_files; do
             if [ ! -f "$file" ]; then
               echo "❌ Missing required file: $file"
@@ -304,7 +309,7 @@ jobs:
       - name: Validate marketplace metadata
         run: |
           echo "Validating action metadata for marketplace..."
-          
+
           # Check marketplace-specific requirements individually
           echo "Checking 'name' field..."
           if yq eval 'has("name")' action.yml | grep -q "true"; then
@@ -313,7 +318,7 @@ jobs:
             echo "❌ Missing name"
             exit 1
           fi
-          
+
           echo "Checking 'description' field..."
           if yq eval 'has("description")' action.yml | grep -q "true"; then
             echo "✅ Found description"
@@ -321,7 +326,7 @@ jobs:
             echo "❌ Missing description"
             exit 1
           fi
-          
+
           echo "Checking 'author' field..."
           if yq eval 'has("author")' action.yml | grep -q "true"; then
             echo "✅ Found author"
@@ -329,7 +334,7 @@ jobs:
             echo "❌ Missing author"
             exit 1
           fi
-          
+
           echo "Checking 'branding' field..."
           if yq eval 'has("branding")' action.yml | grep -q "true"; then
             echo "✅ Found branding"
@@ -337,7 +342,7 @@ jobs:
             echo "❌ Missing branding"
             exit 1
           fi
-          
+
           # Validate branding details
           if yq eval '.branding | has("icon")' action.yml | grep -q "true" && \
              yq eval '.branding | has("color")' action.yml | grep -q "true"; then
@@ -352,13 +357,13 @@ jobs:
       - name: Check README content
         run: |
           echo "Checking README for action usage examples..."
-          
+
           if grep -q "uses:.*syncwright" README.md; then
             echo "✅ README includes action usage examples"
           else
             echo "⚠️  Warning: README should include action usage examples"
           fi
-          
+
           # Check for basic sections
           sections="usage example inputs outputs"
           for section in $sections; do
@@ -397,7 +402,8 @@ jobs:
   summary:
     name: Validation Summary
     runs-on: ubuntu-latest
-    needs: [validate-yaml, validate-action-structure, validate-workflow-security, validate-marketplace, test-action-syntax]
+    needs: [validate-yaml, validate-action-structure, validate-workflow-security,
+            validate-marketplace, test-action-syntax]
     if: always()
     steps:
       - name: Generate validation summary
@@ -412,7 +418,7 @@ jobs:
           echo "| Marketplace Readiness | ${{ needs.validate-marketplace.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Action Syntax Test | ${{ needs.test-action-syntax.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           # Calculate overall status
           failed_jobs=""
           if [ "${{ needs.validate-yaml.result }}" != "success" ]; then
@@ -430,14 +436,17 @@ jobs:
           if [ "${{ needs.test-action-syntax.result }}" != "success" ]; then
             failed_jobs="$failed_jobs Action-Test"
           fi
-          
+
           if [ -z "$failed_jobs" ]; then
             echo "✅ **All validations passed** - Workflows are ready for production" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### Key Improvements Made" >> $GITHUB_STEP_SUMMARY
-            echo "- Replaced Python dependencies with lightweight shell tools" >> $GITHUB_STEP_SUMMARY
-            echo "- Used \`yamllint\` and \`yq\` for YAML validation and parsing" >> $GITHUB_STEP_SUMMARY
-            echo "- Maintained comprehensive security and structure validation" >> $GITHUB_STEP_SUMMARY
+            echo "- Replaced Python dependencies with lightweight shell tools" >> \
+              $GITHUB_STEP_SUMMARY
+            echo "- Used \`yamllint\` and \`yq\` for YAML validation and parsing" >> \
+              $GITHUB_STEP_SUMMARY
+            echo "- Maintained comprehensive security and structure validation" >> \
+              $GITHUB_STEP_SUMMARY
             echo "- Added practical action syntax testing" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ **Some validations failed** - Failed jobs:$failed_jobs" >> $GITHUB_STEP_SUMMARY

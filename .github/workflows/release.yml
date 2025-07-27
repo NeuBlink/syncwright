@@ -1,3 +1,4 @@
+---
 name: Release
 
 on:
@@ -58,17 +59,17 @@ jobs:
               IS_PRERELEASE="false"
             fi
           fi
-          
+
           # Validate version format
           if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9-]+)?(\+[a-zA-Z0-9-]+)?$ ]]; then
             echo "Error: Invalid version format: $VERSION"
             echo "Expected format: vX.Y.Z[-prerelease][+build]"
             exit 1
           fi
-          
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-          
+
           echo "Release version: $VERSION"
           echo "Is prerelease: $IS_PRERELEASE"
 
@@ -126,18 +127,18 @@ jobs:
         run: |
           # Basic YAML syntax validation
           python3 -c "import yaml; yaml.safe_load(open('action.yml'))"
-          
+
           # Check required fields
           if ! grep -q "^name:" action.yml; then
             echo "Error: action.yml missing 'name' field"
             exit 1
           fi
-          
+
           if ! grep -q "^description:" action.yml; then
             echo "Error: action.yml missing 'description' field"
             exit 1
           fi
-          
+
           if ! grep -q "^runs:" action.yml; then
             echo "Error: action.yml missing 'runs' field"
             exit 1
@@ -162,7 +163,7 @@ jobs:
           # Simulate action environment
           export GITHUB_WORKSPACE="${{ github.workspace }}"
           export GITHUB_ACTION_PATH="${{ github.workspace }}"
-          
+
           # Test the install script
           cd "$GITHUB_WORKSPACE"
           ./scripts/install.sh || echo "Install script test completed (expected to fail without releases)"
@@ -235,29 +236,30 @@ jobs:
         id: changelog
         run: |
           VERSION="${{ needs.validate-release.outputs.version }}"
-          
+
           # Generate changelog from git history
           CHANGELOG_FILE=$(mktemp)
-          
+
           # Get previous tag for comparison
           PREV_TAG=$(git tag --sort=-version:refname | grep -v "$VERSION" | head -n1)
-          
+
           if [ -n "$PREV_TAG" ]; then
             echo "## What's Changed" > "$CHANGELOG_FILE"
             echo "" >> "$CHANGELOG_FILE"
-            
+
             # Get commits between tags
             git log --pretty=format:"- %s (%h)" "$PREV_TAG".."$VERSION" >> "$CHANGELOG_FILE"
-            
+
             echo "" >> "$CHANGELOG_FILE"
             echo "" >> "$CHANGELOG_FILE"
-            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...$VERSION" >> "$CHANGELOG_FILE"
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...$VERSION" >> \
+              "$CHANGELOG_FILE"
           else
             echo "## Initial Release" > "$CHANGELOG_FILE"
             echo "" >> "$CHANGELOG_FILE"
             echo "This is the first release of Syncwright." >> "$CHANGELOG_FILE"
           fi
-          
+
           # Set output for use in release
           {
             echo "changelog<<EOF"
@@ -283,9 +285,9 @@ jobs:
               repo: context.repo.repo,
               tag: '${{ needs.validate-release.outputs.version }}'
             });
-            
+
             const changelog = `${{ steps.changelog.outputs.changelog }}`;
-            
+
             await github.rest.repos.updateRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -306,20 +308,21 @@ jobs:
         with:
           script: |
             const version = '${{ needs.validate-release.outputs.version }}';
-            
+
             console.log(`Triggering marketplace publishing for version ${version}`);
-            
+
             // The dedicated marketplace publishing workflow will handle:
             // - Comprehensive validation
-            // - Major version tag updates  
+            // - Major version tag updates
             // - Release note generation
             // - Marketplace submission
-            
+
             // Note: The publish-marketplace.yml workflow is automatically triggered
             // by the tag creation in the release job above
-            
+
             console.log(`Marketplace publishing will be handled by dedicated workflow`);
-            console.log(`Monitor progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml`);
+            console.log(`Monitor progress at: ` +
+              `https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml`);
 
   test-action-consumption:
     name: Test Action Consumption
@@ -337,23 +340,23 @@ jobs:
         run: |
           git config --global user.name "Test User"
           git config --global user.email "test@example.com"
-          
+
           # Create a simple test repository with potential conflicts
           mkdir test-repo
           cd test-repo
           git init
-          
+
           echo "line1" > test.txt
           echo "line2" >> test.txt
           git add test.txt
           git commit -m "Initial commit"
-          
+
           # Create branches that will conflict
           git checkout -b feature-branch
           echo "modified line2 in feature" > test.txt
           git add test.txt
           git commit -m "Feature change"
-          
+
           git checkout main
           echo "line1" > test.txt
           echo "modified line2 in main" >> test.txt
@@ -390,25 +393,28 @@ jobs:
         run: |
           VERSION="${{ needs.validate-release.outputs.version }}"
           IS_PRERELEASE="${{ needs.validate-release.outputs.is_prerelease }}"
-          
+
           echo "## 🚀 Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: $VERSION" >> $GITHUB_STEP_SUMMARY
-          echo "- **Type**: $([ "$IS_PRERELEASE" = "true" ] && echo "Pre-release" || echo "Stable release")" >> $GITHUB_STEP_SUMMARY
+          echo "- **Type**: $([ "$IS_PRERELEASE" = "true" ] && echo "Pre-release" || \
+            echo "Stable release")" >> $GITHUB_STEP_SUMMARY
           echo "- **Release**: ${{ needs.release.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Marketplace Trigger**: ${{ needs.trigger-marketplace-publish.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Testing**: ${{ needs.test-action-consumption.result }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           if [ "${{ needs.release.result }}" = "success" ]; then
             echo "✅ **Release created successfully**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "📦 **Assets available at**: https://github.com/${{ github.repository }}/releases/tag/$VERSION" >> $GITHUB_STEP_SUMMARY
-            
+            echo "📦 **Assets available at**: https://github.com/${{ github.repository }}/releases/tag/$VERSION" >> \
+              $GITHUB_STEP_SUMMARY
+
             if [ "${{ needs.trigger-marketplace-publish.result }}" = "success" ]; then
               echo "🏪 **Marketplace publishing triggered**" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "🔍 **Monitor marketplace publishing**: https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml" >> $GITHUB_STEP_SUMMARY
+              echo "🔍 **Monitor marketplace publishing**: https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml" >> \
+                $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "🔧 **Usage**: " >> $GITHUB_STEP_SUMMARY
               echo '```yaml' >> $GITHUB_STEP_SUMMARY

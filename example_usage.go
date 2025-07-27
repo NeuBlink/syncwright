@@ -139,71 +139,109 @@ func runManualTest() {
 		log.Fatalf("Failed to get working directory: %v", err)
 	}
 
-	// Test 1: Check if in merge state
+	// Run all test phases
+	runGitStateTests(repoPath)
+	runConflictDetectionTests(repoPath)
+	runFileTypeDetectionTests()
+	runFilterTests()
+}
+
+// runGitStateTests tests git state detection
+func runGitStateTests(repoPath string) {
+	fmt.Println("\n--- Git State Tests ---")
+	
 	inMerge, err := gitutils.IsInMergeState(repoPath)
 	if err != nil {
 		fmt.Printf("Failed to check merge state: %v\n", err)
 	} else {
 		fmt.Printf("In merge state: %t\n", inMerge)
 	}
+}
 
-	// Test 2: Detect conflicts
+// runConflictDetectionTests tests conflict detection and payload building
+func runConflictDetectionTests(repoPath string) {
+	fmt.Println("\n--- Conflict Detection Tests ---")
+	
 	conflicts, err := gitutils.DetectConflicts(repoPath)
 	if err != nil {
 		fmt.Printf("Failed to detect conflicts: %v\n", err)
-	} else {
-		fmt.Printf("Found %d conflicted files\n", len(conflicts))
-		for _, conflict := range conflicts {
-			fmt.Printf("  %s (status: %s)\n", conflict.FilePath, conflict.Status)
-		}
+		return
 	}
 
-	// Test 3: Test payload builder
+	fmt.Printf("Found %d conflicted files\n", len(conflicts))
+	for _, conflict := range conflicts {
+		fmt.Printf("  %s (status: %s)\n", conflict.FilePath, conflict.Status)
+	}
+
 	if len(conflicts) > 0 {
-		report := &gitutils.ConflictReport{
-			RepoPath:       repoPath,
-			TotalConflicts: len(conflicts),
-		}
+		testPayloadBuilder(conflicts, repoPath)
+	}
+}
 
-		for _, conflict := range conflicts {
-			hunks, err := gitutils.ParseConflictHunks(conflict.FilePath, repoPath)
-			if err != nil {
-				fmt.Printf("Failed to parse hunks for %s: %v\n", conflict.FilePath, err)
-				continue
-			}
+// testPayloadBuilder tests the payload builder functionality
+func testPayloadBuilder(conflicts []gitutils.ConflictStatus, repoPath string) {
+	fmt.Println("\n--- Payload Builder Test ---")
+	
+	report := buildConflictReport(conflicts, repoPath)
+	
+	builder := payload.NewPayloadBuilder()
+	payloadResult, err := builder.BuildPayload(report)
+	if err != nil {
+		fmt.Printf("Failed to build payload: %v\n", err)
+		return
+	}
 
-			context, err := gitutils.ExtractFileContext(conflict.FilePath, repoPath, 5)
-			if err != nil {
-				fmt.Printf("Failed to extract context for %s: %v\n", conflict.FilePath, err)
-				context = nil
-			}
+	fmt.Printf("Built payload with %d files\n", len(payloadResult.Files))
 
-			conflictFile := gitutils.ConflictFile{
-				Path:    conflict.FilePath,
-				Hunks:   hunks,
-				Context: context,
-			}
+	// Print payload summary
+	jsonData, err := json.MarshalIndent(payloadResult.Metadata, "", "  ")
+	if err == nil {
+		fmt.Printf("Payload metadata:\n%s\n", string(jsonData))
+	}
+}
 
-			report.ConflictedFiles = append(report.ConflictedFiles, conflictFile)
-		}
+// buildConflictReport builds a conflict report from detected conflicts
+func buildConflictReport(conflicts []gitutils.ConflictStatus, repoPath string) *gitutils.ConflictReport {
+	report := &gitutils.ConflictReport{
+		RepoPath:       repoPath,
+		TotalConflicts: len(conflicts),
+	}
 
-		// Test payload builder
-		builder := payload.NewPayloadBuilder()
-		payload, err := builder.BuildPayload(report)
-		if err != nil {
-			fmt.Printf("Failed to build payload: %v\n", err)
-		} else {
-			fmt.Printf("Built payload with %d files\n", len(payload.Files))
-
-			// Print payload summary
-			jsonData, err := json.MarshalIndent(payload.Metadata, "", "  ")
-			if err == nil {
-				fmt.Printf("Payload metadata:\n%s\n", string(jsonData))
-			}
+	for _, conflict := range conflicts {
+		conflictFile := processConflictFile(conflict, repoPath)
+		if conflictFile != nil {
+			report.ConflictedFiles = append(report.ConflictedFiles, *conflictFile)
 		}
 	}
 
-	// Test 4: Test file type detection
+	return report
+}
+
+// processConflictFile processes a single conflicted file
+func processConflictFile(conflict gitutils.ConflictStatus, repoPath string) *gitutils.ConflictFile {
+	hunks, err := gitutils.ParseConflictHunks(conflict.FilePath, repoPath)
+	if err != nil {
+		fmt.Printf("Failed to parse hunks for %s: %v\n", conflict.FilePath, err)
+		return nil
+	}
+
+	context, err := gitutils.ExtractFileContext(conflict.FilePath, repoPath, 5)
+	if err != nil {
+		fmt.Printf("Failed to extract context for %s: %v\n", conflict.FilePath, err)
+		context = nil
+	}
+
+	return &gitutils.ConflictFile{
+		Path:    conflict.FilePath,
+		Hunks:   hunks,
+		Context: context,
+	}
+}
+
+// runFileTypeDetectionTests tests file type detection
+func runFileTypeDetectionTests() {
+	fmt.Println("\n--- File Type Detection Test ---")
+	
 	testFiles := []string{
 		"main.go",
 		"package.json",
@@ -214,19 +252,18 @@ func runManualTest() {
 		"Dockerfile",
 	}
 
-	fmt.Println("\nFile type detection test:")
 	for _, file := range testFiles {
 		language := payload.DetectLanguage(file)
 		fileType := payload.DetectFileType(file)
 		fmt.Printf("  %s: language=%s, type=%s\n", file, language, fileType)
 	}
+}
 
-	// Test 5: Test filters
-	fmt.Println("\nFilter test:")
-	sensitiveFilter := payload.NewSensitiveFileFilter()
-	binaryFilter := payload.NewBinaryFileFilter()
-	lockfileFilter := payload.NewLockfileFilter()
-
+// runFilterTests tests file filtering functionality
+func runFilterTests() {
+	fmt.Println("\n--- Filter Test ---")
+	
+	filters := createTestFilters()
 	testPaths := []string{
 		".env",
 		"package-lock.json",
@@ -238,8 +275,24 @@ func runManualTest() {
 
 	for _, path := range testPaths {
 		fmt.Printf("  %s:\n", path)
-		fmt.Printf("    Sensitive: %t\n", sensitiveFilter.ShouldExclude(path))
-		fmt.Printf("    Binary: %t\n", binaryFilter.ShouldExclude(path))
-		fmt.Printf("    Lockfile: %t\n", lockfileFilter.ShouldExclude(path))
+		fmt.Printf("    Sensitive: %t\n", filters.sensitive.ShouldExclude(path))
+		fmt.Printf("    Binary: %t\n", filters.binary.ShouldExclude(path))
+		fmt.Printf("    Lockfile: %t\n", filters.lockfile.ShouldExclude(path))
+	}
+}
+
+// testFilters holds filter instances for testing
+type testFilters struct {
+	sensitive payload.FileFilter
+	binary    payload.FileFilter
+	lockfile  payload.FileFilter
+}
+
+// createTestFilters creates filter instances for testing
+func createTestFilters() testFilters {
+	return testFilters{
+		sensitive: payload.NewSensitiveFileFilter(),
+		binary:    payload.NewBinaryFileFilter(),
+		lockfile:  payload.NewLockfileFilter(),
 	}
 }

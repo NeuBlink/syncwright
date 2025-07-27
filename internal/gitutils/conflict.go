@@ -87,14 +87,20 @@ func isConflictStatus(status string) bool {
 
 // ParseConflictHunks extracts conflict hunks from a file's content
 func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
-	cmd := exec.Command("git", "show", ":"+filePath)
+	// Validate and sanitize file path to prevent command injection
+	cleanPath := filepath.Clean(filePath)
+	if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") {
+		return nil, fmt.Errorf("invalid file path: %s", filePath)
+	}
+
+	cmd := exec.Command("git", "show", ":"+cleanPath)
 	cmd.Dir = repoPath
 
 	// If the file doesn't exist in git, read from filesystem
 	content, err := cmd.Output()
 	if err != nil {
 		// Try reading from filesystem using Go's standard library instead of shell command
-		fullPath := filepath.Join(repoPath, filePath)
+		fullPath := filepath.Join(repoPath, cleanPath)
 		content, err = os.ReadFile(fullPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)

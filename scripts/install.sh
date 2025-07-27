@@ -89,7 +89,7 @@ get_version() {
     # Try GITHUB_ACTION_REF first (from action context)
     if [ -n "${GITHUB_ACTION_REF:-}" ]; then
         # Extract version from ref (e.g., refs/tags/v1.0.0 -> v1.0.0)
-        version=$(echo "$GITHUB_ACTION_REF" | sed 's|^refs/tags/||')
+        version="${GITHUB_ACTION_REF#refs/tags/}"
         log_info "Using version from GITHUB_ACTION_REF: $version"
     # Try SYNCWRIGHT_VERSION environment variable
     elif [ -n "${SYNCWRIGHT_VERSION:-}" ] && [ "$SYNCWRIGHT_VERSION" != "latest" ]; then
@@ -333,7 +333,8 @@ install_via_source_build() {
         # Create temporary directory for isolated build
         local temp_dir
         temp_dir=$(mktemp -d)
-        local original_dir=$(pwd)
+        local original_dir
+        original_dir=$(pwd)
         
         cd "$temp_dir"
         
@@ -355,7 +356,8 @@ install_via_source_build() {
     fi
     
     # Build from local source
-    local original_dir=$(pwd)
+    local original_dir
+    original_dir=$(pwd)
     cd "$source_dir"
     
     log_info "Building from source in: $source_dir"

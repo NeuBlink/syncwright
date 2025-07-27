@@ -1,3 +1,4 @@
+---
 name: CI
 
 on:
@@ -116,6 +117,7 @@ jobs:
         run: go mod download
 
       - name: Run tests
+        shell: bash
         run: |
           go test -v -race -coverprofile=coverage.out ./...
 
@@ -176,13 +178,13 @@ jobs:
           else
             BINARY="bin/syncwright"
           fi
-          
+
           if [ ! -f "$BINARY" ]; then
             echo "Error: Binary not found at $BINARY"
             ls -la bin/
             exit 1
           fi
-          
+
           # Test basic command execution
           "$BINARY" --help || echo "Help command completed with exit code $?"
           "$BINARY" --version || echo "Version command completed with exit code $?"
@@ -216,22 +218,23 @@ jobs:
           # Create a test git repository
           git config --global user.name "CI Test"
           git config --global user.email "ci@example.com"
-          
+          git config --global init.defaultBranch main
+
           mkdir test-repo
           cd test-repo
           git init
-          
+
           # Create initial file
           echo "initial content" > test.txt
           git add test.txt
           git commit -m "Initial commit"
-          
+
           # Create conflict scenario
           git checkout -b feature
           echo "feature change" > test.txt
           git add test.txt
           git commit -m "Feature change"
-          
+
           git checkout main
           echo "main change" > test.txt
           git add test.txt
@@ -294,7 +297,7 @@ jobs:
             truthy:
               allowed-values: ['true', 'false', 'on', 'off', 'yes', 'no']
           EOF
-          
+
           echo "Validating YAML files with yamllint..."
           yamllint action.yml .github/workflows/
 
@@ -309,7 +312,7 @@ jobs:
               with open('action.yml', 'r') as f:
                   data = yaml.safe_load(f)
               print('✅ action.yml syntax is valid')
-              
+
               # Check required fields
               required_fields = ['name', 'description', 'runs']
               for field in required_fields:
@@ -318,7 +321,7 @@ jobs:
                       sys.exit(1)
                   else:
                       print(f'✅ Found required field: {field}')
-                      
+
           except yaml.YAMLError as e:
               print(f'❌ action.yml syntax error: {e}')
               sys.exit(1)
@@ -344,14 +347,14 @@ jobs:
                   with open(workflow, 'r') as f:
                       data = yaml.safe_load(f)
                   print(f'✅ {workflow} syntax is valid')
-                  
+
                   # Basic workflow structure validation
                   if 'on' not in data:
                       print(f'⚠️  {workflow} missing "on" trigger specification')
                   if 'jobs' not in data:
                       print(f'❌ {workflow} missing "jobs" section')
                       errors.append(f'{workflow} missing jobs section')
-                      
+
               except yaml.YAMLError as e:
                   error_msg = f'❌ {workflow} syntax error: {e}'
                   print(error_msg)
@@ -370,7 +373,7 @@ jobs:
         run: |
           # Check required fields for GitHub Actions
           required_fields=("name" "description" "runs")
-          
+
           for field in "${required_fields[@]}"; do
             if ! grep -q "^${field}:" action.yml; then
               echo "❌ Missing required field: $field"
@@ -386,7 +389,7 @@ jobs:
           if grep -q "github.action_path" action.yml; then
             echo "✅ Action uses github.action_path correctly"
           fi
-          
+
           # Check shell specifications
           if ! grep -q "shell: bash" action.yml; then
             echo "❌ Missing shell specification in composite action"
@@ -418,7 +421,7 @@ jobs:
         run: |
           # Test install script with dry run simulation
           chmod +x scripts/install.sh
-          
+
           # Test help output
           scripts/install.sh --help
 
@@ -435,19 +438,19 @@ jobs:
         run: |
           git config --global user.name "Integration Test"
           git config --global user.email "integration@example.com"
-          
+
           # Create a complex test scenario
           mkdir integration-test
           cd integration-test
           git init
-          
+
           # Create multiple files with different content
           echo "shared content" > shared.txt
           echo "file1 content" > file1.txt
           echo "file2 content" > file2.txt
           git add .
           git commit -m "Initial commit"
-          
+
           # Create feature branch
           git checkout -b feature
           echo "shared content modified in feature" > shared.txt
@@ -455,7 +458,7 @@ jobs:
           echo "new feature file" > feature.txt
           git add .
           git commit -m "Feature changes"
-          
+
           # Switch back and make conflicting changes
           git checkout main
           echo "shared content modified in main" > shared.txt
@@ -499,7 +502,7 @@ jobs:
 
       - name: Install gosec
         run: |
-          go install github.com/securecodewarrior/gosec/v2/cmd/gosec@v2.21.4
+          go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
 
       - name: Run Gosec Security Scanner
         run: |
@@ -545,14 +548,15 @@ jobs:
   summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [changes, lint, test, build, test-cli-commands, validate-actions, validate-scripts, integration-test, security-scan, performance-test]
+    needs: [changes, lint, test, build, test-cli-commands, validate-actions,
+            validate-scripts, integration-test, security-scan, performance-test]
     if: always()
     steps:
       - name: Generate CI summary
         run: |
           echo "## 🔍 CI Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           # Check which jobs ran based on changes
           if [ "${{ needs.changes.outputs.go }}" = "true" ]; then
             echo "### Go Code Changes Detected" >> $GITHUB_STEP_SUMMARY
@@ -566,7 +570,7 @@ jobs:
             echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
             echo "| Performance Test | ${{ needs.performance-test.result }} |" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           if [ "${{ needs.changes.outputs.actions }}" = "true" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### GitHub Actions Changes Detected" >> $GITHUB_STEP_SUMMARY
@@ -575,7 +579,7 @@ jobs:
             echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
             echo "| Validate Actions | ${{ needs.validate-actions.result }} |" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           if [ "${{ needs.changes.outputs.scripts }}" = "true" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### Script Changes Detected" >> $GITHUB_STEP_SUMMARY
@@ -584,13 +588,15 @@ jobs:
             echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
             echo "| Validate Scripts | ${{ needs.validate-scripts.result }} |" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Test | ${{ needs.integration-test.result }} |" >> $GITHUB_STEP_SUMMARY
-          
+
           # Overall status
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ needs.lint.result }}" != "failure" ] && [ "${{ needs.test.result }}" != "failure" ] && [ "${{ needs.build.result }}" != "failure" ]; then
+          if [ "${{ needs.lint.result }}" != "failure" ] && \
+             [ "${{ needs.test.result }}" != "failure" ] && \
+             [ "${{ needs.build.result }}" != "failure" ]; then
             echo "✅ **CI passed successfully**" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ **CI failed - check job details above**" >> $GITHUB_STEP_SUMMARY

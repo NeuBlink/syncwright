@@ -1,3 +1,4 @@
+---
 name: Version Tag Management
 
 on:
@@ -64,7 +65,7 @@ jobs:
           # Get the latest tag from git
           CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           CURRENT_VERSION=${CURRENT_TAG#v}
-          
+
           echo "current-version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           echo "Current version: $CURRENT_VERSION"
 
@@ -75,22 +76,22 @@ jobs:
           VERSION_TYPE="${{ github.event.inputs.version_type }}"
           CUSTOM_VERSION="${{ github.event.inputs.custom_version }}"
           PRERELEASE_TYPE="${{ github.event.inputs.prerelease_type }}"
-          
+
           echo "Calculating new version from: $CURRENT_VERSION"
           echo "Version type: $VERSION_TYPE"
-          
+
           # Parse current version
           IFS='.' read -r -a VERSION_PARTS <<< "${CURRENT_VERSION%%-*}"
           MAJOR=${VERSION_PARTS[0]:-0}
           MINOR=${VERSION_PARTS[1]:-0}
           PATCH=${VERSION_PARTS[2]:-0}
-          
+
           # Check for existing prerelease
           PRERELEASE=""
           if [[ "$CURRENT_VERSION" =~ - ]]; then
             PRERELEASE="${CURRENT_VERSION#*-}"
           fi
-          
+
           case "$VERSION_TYPE" in
             "major")
               NEW_MAJOR=$((MAJOR + 1))
@@ -114,14 +115,15 @@ jobs:
               NEW_MAJOR=$MAJOR
               NEW_MINOR=$MINOR
               NEW_PATCH=$PATCH
-              
+
               # Calculate prerelease number
-              if [[ -n "$PRERELEASE" && "$PRERELEASE" =~ ^${PRERELEASE_TYPE}\.([0-9]+)$ ]]; then
+              if [[ -n "$PRERELEASE" && \
+                    "$PRERELEASE" =~ ^${PRERELEASE_TYPE}\.([0-9]+)$ ]]; then
                 PRERELEASE_NUM=$((${BASH_REMATCH[1]} + 1))
               else
                 PRERELEASE_NUM=1
               fi
-              
+
               NEW_VERSION="$NEW_MAJOR.$NEW_MINOR.$NEW_PATCH-${PRERELEASE_TYPE}.${PRERELEASE_NUM}"
               ;;
             "custom")
@@ -129,13 +131,13 @@ jobs:
                 echo "Error: Custom version is required when version_type is custom"
                 exit 1
               fi
-              
+
               # Validate custom version format
               if [[ ! "$CUSTOM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
                 echo "Error: Invalid custom version format. Expected: X.Y.Z or X.Y.Z-prerelease"
                 exit 1
               fi
-              
+
               NEW_VERSION="$CUSTOM_VERSION"
               ;;
             *)
@@ -143,12 +145,12 @@ jobs:
               exit 1
               ;;
           esac
-          
+
           VERSION_TAG="v$NEW_VERSION"
-          
+
           echo "new-version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "version-tag=$VERSION_TAG" >> $GITHUB_OUTPUT
-          
+
           echo "New version: $NEW_VERSION"
           echo "New tag: $VERSION_TAG"
 
@@ -157,22 +159,24 @@ jobs:
           NEW_VERSION="${{ steps.calculate-version.outputs.new-version }}"
           CURRENT_VERSION="${{ steps.get-current.outputs.current-version }}"
           VERSION_TAG="${{ steps.calculate-version.outputs.version-tag }}"
-          
+
           # Check if tag already exists
           if git rev-parse "$VERSION_TAG" >/dev/null 2>&1; then
             echo "Error: Tag $VERSION_TAG already exists"
             exit 1
           fi
-          
+
           # For stable releases, ensure we're not going backwards
           if [[ ! "$NEW_VERSION" =~ - ]]; then
             # Simple version comparison (works for most cases)
-            if [ "$(printf '%s\n' "$CURRENT_VERSION" "$NEW_VERSION" | sort -V | head -n1)" = "$NEW_VERSION" ] && [ "$CURRENT_VERSION" != "$NEW_VERSION" ]; then
-              echo "Error: New version $NEW_VERSION is not greater than current version $CURRENT_VERSION"
+            if [ "$(printf '%s\n' "$CURRENT_VERSION" "$NEW_VERSION" | sort -V | head -n1)" = \
+                 "$NEW_VERSION" ] && [ "$CURRENT_VERSION" != "$NEW_VERSION" ]; then
+              echo "Error: New version $NEW_VERSION is not greater than current \
+                version $CURRENT_VERSION"
               exit 1
             fi
           fi
-          
+
           echo "Version validation passed"
 
   create-version-tag:
@@ -193,27 +197,27 @@ jobs:
       - name: Update version files (if any)
         run: |
           NEW_VERSION="${{ needs.validate-inputs.outputs.new-version }}"
-          
+
           # Update version in go files if there's a version file
           if [ -f "internal/version/version.go" ]; then
             echo "Updating version in Go files..."
             sed -i "s/const Version = \".*\"/const Version = \"$NEW_VERSION\"/" internal/version/version.go
             git add internal/version/version.go
           fi
-          
+
           # Update version in action.yml comments if present
           if grep -q "# Version:" action.yml; then
             sed -i "s/# Version: .*/# Version: $NEW_VERSION/" action.yml
             git add action.yml
           fi
-          
+
           # Check if there are any changes to commit
           if ! git diff --cached --quiet; then
             COMMIT_MESSAGE="${{ github.event.inputs.commit_message }}"
             if [ -z "$COMMIT_MESSAGE" ]; then
               COMMIT_MESSAGE="Bump version to $NEW_VERSION"
             fi
-            
+
             git commit -m "$COMMIT_MESSAGE"
             echo "Version files updated and committed"
           else
@@ -224,14 +228,14 @@ jobs:
         run: |
           VERSION_TAG="${{ needs.validate-inputs.outputs.version-tag }}"
           NEW_VERSION="${{ needs.validate-inputs.outputs.new-version }}"
-          
+
           # Create annotated tag
           git tag -a "$VERSION_TAG" -m "Release $VERSION_TAG"
-          
+
           # Push changes and tag
           git push origin HEAD
           git push origin "$VERSION_TAG"
-          
+
           echo "Created and pushed tag: $VERSION_TAG"
 
       - name: Generate tag summary
@@ -240,7 +244,7 @@ jobs:
           NEW_VERSION="${{ needs.validate-inputs.outputs.new-version }}"
           CURRENT_VERSION="${{ needs.validate-inputs.outputs.current-version }}"
           VERSION_TYPE="${{ github.event.inputs.version_type }}"
-          
+
           echo "## 🏷️ Version Tag Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
@@ -250,28 +254,31 @@ jobs:
           echo "| **Version Type** | \`$VERSION_TYPE\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Tag Created** | ✅ |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           # Check if it's a prerelease
           if [[ "$NEW_VERSION" =~ - ]]; then
             echo "🧪 **This is a prerelease version**" >> $GITHUB_STEP_SUMMARY
           else
             echo "🚀 **This is a stable release**" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           if [ "${{ github.event.inputs.create_release }}" = "true" ]; then
             echo "1. ⏳ GitHub release will be created automatically" >> $GITHUB_STEP_SUMMARY
             echo "2. ⏳ Marketplace publishing will be triggered" >> $GITHUB_STEP_SUMMARY
           else
             echo "1. 📝 Create GitHub release manually if desired" >> $GITHUB_STEP_SUMMARY
-            echo "2. 🔧 Monitor workflows at: https://github.com/${{ github.repository }}/actions" >> $GITHUB_STEP_SUMMARY
+            echo "2. 🔧 Monitor workflows at: https://github.com/${{ github.repository }}/actions" >> \
+              $GITHUB_STEP_SUMMARY
           fi
-          
-          echo "3. 🔍 Monitor release workflow: https://github.com/${{ github.repository }}/actions/workflows/release.yml" >> $GITHUB_STEP_SUMMARY
-          echo "4. 🏪 Monitor marketplace publishing: https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml" >> $GITHUB_STEP_SUMMARY
+
+          echo "3. 🔍 Monitor release workflow: https://github.com/${{ github.repository }}/actions/workflows/release.yml" >> \
+            $GITHUB_STEP_SUMMARY
+          echo "4. 🏪 Monitor marketplace publishing: https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml" >> \
+            $GITHUB_STEP_SUMMARY
 
   trigger-release:
     name: Trigger Release Creation
@@ -285,10 +292,10 @@ jobs:
           script: |
             const version = '${{ needs.validate-inputs.outputs.version-tag }}';
             const isPrerelease = version.includes('-');
-            
+
             console.log(`Triggering release workflow for ${version}`);
             console.log(`Is prerelease: ${isPrerelease}`);
-            
+
             try {
               await github.rest.actions.createWorkflowDispatch({
                 owner: context.repo.owner,
@@ -301,7 +308,7 @@ jobs:
                   prerelease: isPrerelease.toString()
                 }
               });
-              
+
               console.log('Release workflow triggered successfully');
             } catch (error) {
               console.error('Failed to trigger release workflow:', error);
@@ -314,11 +321,14 @@ jobs:
         run: |
           echo "## 🚀 Release Triggered" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The release workflow has been triggered for version \`${{ needs.validate-inputs.outputs.version-tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "The release workflow has been triggered for version \`${{ needs.validate-inputs.outputs.version-tag }}\`" >> \
+            $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Monitor Progress:**" >> $GITHUB_STEP_SUMMARY
-          echo "- [Release Workflow](https://github.com/${{ github.repository }}/actions/workflows/release.yml)" >> $GITHUB_STEP_SUMMARY
-          echo "- [Marketplace Publishing](https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Release Workflow](https://github.com/${{ github.repository }}/actions/workflows/release.yml)" >> \
+            $GITHUB_STEP_SUMMARY
+          echo "- [Marketplace Publishing](https://github.com/${{ github.repository }}/actions/workflows/publish-marketplace.yml)" >> \
+            $GITHUB_STEP_SUMMARY
 
   notify-completion:
     name: Notify Completion
@@ -330,10 +340,10 @@ jobs:
         if: needs.create-version-tag.result == 'success'
         run: |
           VERSION_TAG="${{ needs.validate-inputs.outputs.version-tag }}"
-          
+
           echo "✅ Version tag $VERSION_TAG created successfully!"
           echo "🔗 Tag: https://github.com/${{ github.repository }}/releases/tag/$VERSION_TAG"
-          
+
           if [ "${{ github.event.inputs.create_release }}" = "true" ]; then
             echo "🚀 Release creation triggered"
           fi

@@ -1,6 +1,8 @@
 ---
 name: 'Syncwright'
-description: 'AI-powered Git merge conflict resolution tool that automatically detects, analyzes, and resolves merge conflicts using advanced language models'
+description: >-
+  AI-powered Git merge conflict resolution tool that automatically detects,
+  analyzes, and resolves merge conflicts using advanced language models
 author: 'Syncwright Team'
 
 # GitHub Marketplace metadata
@@ -266,7 +268,8 @@ runs:
           COMMIT_MSG=$(cat <<'EOF'
           Resolve merge conflicts using Syncwright AI
 
-          Automatically resolved conflicts in ${{ steps.run-syncwright.outputs.files_modified }} files using AI-powered analysis for context-aware resolution. Validated resolution using Syncwright validation suite.
+          Automatically resolved conflicts in ${{ steps.run-syncwright.outputs.files_modified }} files using
+          AI-powered analysis for context-aware resolution. Validated resolution using Syncwright validation suite.
 
           Co-authored-by: syncwright-bot <syncwright-bot@users.noreply.github.com>
           EOF

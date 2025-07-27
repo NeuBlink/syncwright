@@ -17,6 +17,7 @@ const (
 	LanguagePython     = "python"
 	LanguageGo         = "go"
 	LanguageJSON       = "json"
+	LanguageJava       = "java"
 	FileTypeText       = "text"
 )
 
@@ -33,7 +34,7 @@ func DetectLanguage(filePath string) string {
 		".py":    LanguagePython,
 		".pyx":   "python",
 		".pyi":   "python",
-		".java":  "java",
+		".java":  LanguageJava,
 		".kt":    "kotlin",
 		".scala": "scala",
 		".c":     "c",
@@ -117,7 +118,7 @@ func DetectFileType(filePath string) string {
 	language := DetectLanguage(filePath)
 
 	switch language {
-	case LanguageGo, LanguageJavaScript, LanguageTypeScript, LanguagePython, "java", "kotlin", "scala",
+	case LanguageGo, LanguageJavaScript, LanguageTypeScript, LanguagePython, LanguageJava, "kotlin", "scala",
 		"c", "cpp", "csharp", "fsharp", "ruby", "php", "rust", "swift",
 		"objective-c", "dart", "r", "perl", "haskell", "ocaml", "clojure",
 		"elixir", "erlang", "nim", "zig", "vlang", "julia":
@@ -308,7 +309,7 @@ func (pb *PayloadBuilder) detectFramework(repoPath, language string) string {
 		return pb.detectPythonFramework(repoPath)
 	case LanguageGo:
 		return pb.detectGoFramework(repoPath)
-	case "java":
+	case LanguageJava:
 		return pb.detectJavaFramework(repoPath)
 	default:
 		return ""
