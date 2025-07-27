@@ -1,0 +1,125 @@
+---
+name: Auto-Resolve Merge Conflicts
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+jobs:
+  detect-and-resolve-conflicts:
+    name: Detect and Resolve Conflicts
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "syncwright-bot[bot]"
+          git config --global user.email "syncwright-bot[bot]@users.noreply.github.com"
+
+      - name: Check for merge conflicts
+        id: check-conflicts
+        run: |
+          echo "Checking for merge conflicts..."
+          
+          # Try to merge main into the PR branch
+          git checkout ${{ github.head_ref }}
+          git fetch origin main
+          
+          # Attempt merge to detect conflicts
+          if git merge origin/main --no-commit --no-ff; then
+            echo "merge_conflicts=false" >> $GITHUB_OUTPUT
+            echo "No merge conflicts detected"
+            git merge --abort 2>/dev/null || true
+          else
+            echo "merge_conflicts=true" >> $GITHUB_OUTPUT
+            echo "Merge conflicts detected!"
+            git merge --abort 2>/dev/null || true
+          fi
+
+      - name: Auto-resolve conflicts with Syncwright
+        if: steps.check-conflicts.outputs.merge_conflicts == 'true'
+        uses: ./
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          merge_failed: true
+          run_validation: true
+          max_tokens: -1
+          pr_number: ${{ github.event.number }}
+          base_branch: ${{ github.base_ref }}
+          head_branch: ${{ github.head_ref }}
+
+      - name: Comment on PR
+        if: steps.check-conflicts.outputs.merge_conflicts == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const comment = `🤖 **Syncwright Auto-Resolution**
+            
+            Merge conflicts were detected and automatically resolved using AI-powered conflict resolution.
+            
+            **What happened:**
+            - Conflicts detected between \`${{ github.head_ref }}\` and \`${{ github.base_ref }}\`
+            - Syncwright analyzed the conflicts and applied intelligent resolution
+            - Changes have been validated and committed
+            
+            **Next steps:**
+            - Review the resolution changes
+            - Verify the conflicts were resolved correctly
+            - Merge when ready
+            
+            ---
+            *Powered by [Syncwright](https://github.com/NeuBlink/syncwright) - AI-powered merge conflict resolution*`;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: comment
+            });
+
+  notify-on-main-update:
+    name: Notify PRs of Main Updates
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Find open PRs
+        id: find-prs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pulls } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open'
+            });
+            
+            return pulls.map(pr => pr.number);
+          result-encoding: json
+
+      - name: Trigger conflict check on open PRs
+        if: steps.find-prs.outputs.result != '[]'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumbers = ${{ steps.find-prs.outputs.result }};
+            
+            for (const prNumber of prNumbers) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'auto-resolve-conflicts.yml',
+                ref: 'main',
+                inputs: {
+                  pr_number: prNumber.toString()
+                }
+              });
+            }
