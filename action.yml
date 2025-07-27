@@ -60,24 +60,48 @@ runs:
       run: |
         echo "Installing Syncwright binary..."
         
+        # Validate and sanitize action path to prevent code injection
+        ACTION_PATH="${{ github.action_path }}"
+        WORKSPACE_PATH="${{ github.workspace }}"
+        
+        # Basic path validation - ensure paths don't contain dangerous characters
+        if [[ "$ACTION_PATH" =~ [\;\&\|\`\$\(\)] ]] || [[ "$WORKSPACE_PATH" =~ [\;\&\|\`\$\(\)] ]]; then
+          echo "Error: Action or workspace path contains potentially dangerous characters"
+          exit 1
+        fi
+        
+        # Ensure paths are absolute and don't contain directory traversal
+        if [[ "$ACTION_PATH" != /* ]] || [[ "$WORKSPACE_PATH" != /* ]]; then
+          echo "Error: Action or workspace path is not absolute"
+          exit 1
+        fi
+        
+        if [[ "$ACTION_PATH" =~ \.\. ]] || [[ "$WORKSPACE_PATH" =~ \.\. ]]; then
+          echo "Error: Action or workspace path contains directory traversal"
+          exit 1
+        fi
+        
         # Check if binary already exists in action path (for local testing)
-        if [ -f "${{ github.action_path }}/bin/syncwright" ]; then
+        BINARY_PATH="${ACTION_PATH}/bin/syncwright"
+        if [ -f "$BINARY_PATH" ]; then
           echo "Using pre-built binary from action path"
-          cp "${{ github.action_path }}/bin/syncwright" "./syncwright"
+          cp "$BINARY_PATH" "./syncwright"
           chmod +x "./syncwright"
         else
           # Run the installation script for release downloads
           echo "Running installation script..."
-          if ! "${{ github.action_path }}/scripts/install.sh"; then
+          INSTALL_SCRIPT="${ACTION_PATH}/scripts/install.sh"
+          if [ -f "$INSTALL_SCRIPT" ] && ! "$INSTALL_SCRIPT"; then
             echo "Installation script failed, trying alternative methods..."
             
             # For CI/testing scenarios, try to build from source if Go is available
             if command -v go >/dev/null 2>&1; then
               echo "Building from source using Go..."
-              cd "${{ github.action_path }}"
+              cd "$ACTION_PATH"
               if [ -f "go.mod" ]; then
-                go build -o "${{ github.workspace }}/syncwright" ./cmd/syncwright
-                cd "${{ github.workspace }}"
+                OUTPUT_PATH="${WORKSPACE_PATH}/syncwright"
+                go build -o "$OUTPUT_PATH" ./cmd/syncwright
+                cd "$WORKSPACE_PATH"
               else
                 echo "No go.mod found, cannot build from source"
                 exit 1
@@ -102,7 +126,7 @@ runs:
         fi
         
         # Add to PATH for subsequent steps
-        echo "${{ github.workspace }}" >> $GITHUB_PATH
+        echo "$WORKSPACE_PATH" >> $GITHUB_PATH
         
         # Verify installation
         ./syncwright --version
