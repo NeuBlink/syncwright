@@ -271,7 +271,7 @@ func (d *DetectCommand) addConflictedFilesSection(output []string, result *Detec
 }
 
 // addVerboseConflictDetails adds detailed conflict information when verbose mode is enabled
-func (d *DetectCommand) addVerboseConflictDetails(output []string, conflicts []payload.ConflictHunk) []string {
+func (d *DetectCommand) addVerboseConflictDetails(output []string, conflicts []payload.ConflictHunkPayload) []string {
 	for i, conflict := range conflicts {
 		output = append(output, fmt.Sprintf("      Conflict %d: lines %d-%d (%s)",
 			i+1, conflict.StartLine, conflict.EndLine, conflict.ConflictType))
