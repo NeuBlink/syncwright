@@ -178,7 +178,7 @@ runs:
                   echo "Command $1 completed (CI stub mode)"
                   exit 0 ;;
               esac
-              STUB_EOF
+STUB_EOF
               chmod +x "$TARGET_BINARY"
               echo "Warning: Using CI stub for testing. Full functionality not available."
             fi
@@ -309,7 +309,7 @@ runs:
           AI-powered analysis for context-aware resolution. Validated resolution using Syncwright validation suite.
 
           Co-authored-by: syncwright-bot <syncwright-bot@users.noreply.github.com>
-          EOF
+EOF
           )
 
           # Commit changes
