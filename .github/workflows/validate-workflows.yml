@@ -394,7 +394,8 @@ jobs:
           
           # Accept both success and skipped as valid outcomes
           # The action might skip in CI mode which is acceptable
-          if [ "${{ steps.test-action.outcome }}" = "success" ] || [ "${{ steps.test-action.conclusion }}" = "skipped" ]; then
+          if [ "${{ steps.test-action.outcome }}" = "success" ] || \
+             [ "${{ steps.test-action.conclusion }}" = "skipped" ]; then
             echo "✅ Action syntax and basic execution is valid"
           elif [ "${{ steps.test-action.outcome }}" = "failure" ]; then
             echo "⚠️  Action failed during test execution but syntax may still be valid"
