@@ -27,6 +27,8 @@ type DetectOptions struct {
 	MaxContextLines int
 	Verbose         bool
 	ExcludePatterns []string
+	// Feature branch: Add timeout support for long-running operations
+	TimeoutSeconds  int
 }
 
 // DetectResult represents the result of conflict detection
@@ -61,6 +63,9 @@ func NewDetectCommand(options DetectOptions) *DetectCommand {
 	}
 	if options.MaxContextLines == 0 {
 		options.MaxContextLines = 5
+	}
+	if options.TimeoutSeconds == 0 {
+		options.TimeoutSeconds = 30 // Default timeout for operations
 	}
 	if options.RepoPath == "" {
 		if wd, err := os.Getwd(); err == nil {
