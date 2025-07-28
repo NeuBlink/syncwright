@@ -1,6 +1,6 @@
 ---
 name: 'Syncwright'
-description: 'AI-powered Git merge conflict resolution with Claude AI - automatic detection, analysis & resolution for CI/CD'
+description: 'AI-powered Git merge conflict resolution with Claude AI - automatic detection, analysis & resolution'
 author: 'Syncwright Team'
 
 # GitHub Marketplace metadata
