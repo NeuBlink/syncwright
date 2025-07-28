@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/NeuBlink/syncwright/internal/gitutils"
+	"github.com/NeuBlink/syncwright/internal/logging"
+	"go.uber.org/zap"
 )
 
 const (
@@ -26,9 +28,9 @@ type SimplifiedConflictPayload struct {
 
 // SimplifiedFilePayload represents a single file's conflict data
 type SimplifiedFilePayload struct {
-	Path      string                     `json:"path"`
-	Language  string                     `json:"language"`
-	Conflicts []SimplifiedConflictHunk   `json:"conflicts"`
+	Path      string                   `json:"path"`
+	Language  string                   `json:"language"`
+	Conflicts []SimplifiedConflictHunk `json:"conflicts"`
 }
 
 // SimplifiedConflictHunk represents a conflict with minimal context
@@ -45,7 +47,7 @@ type SimplifiedConflictHunk struct {
 // detectLanguage determines the programming language from file extension
 func detectLanguage(filePath string) string {
 	ext := strings.ToLower(filepath.Ext(filePath))
-	
+
 	languageMap := map[string]string{
 		".go":    "go",
 		".js":    "javascript",
@@ -176,11 +178,11 @@ type DetectOptions struct {
 
 // DetectResult represents the result of conflict detection
 type DetectResult struct {
-	Success         bool                        `json:"success"`
-	ConflictReport  *gitutils.ConflictReport    `json:"conflict_report,omitempty"`
-	ConflictPayload *SimplifiedConflictPayload  `json:"conflict_payload,omitempty"`
-	ErrorMessage    string                      `json:"error_message,omitempty"`
-	Summary         DetectSummary               `json:"summary"`
+	Success         bool                       `json:"success"`
+	ConflictReport  *gitutils.ConflictReport   `json:"conflict_report,omitempty"`
+	ConflictPayload *SimplifiedConflictPayload `json:"conflict_payload,omitempty"`
+	ErrorMessage    string                     `json:"error_message,omitempty"`
+	Summary         DetectSummary              `json:"summary"`
 }
 
 // DetectSummary provides a summary of the detection results
@@ -195,10 +197,10 @@ type DetectSummary struct {
 
 // DetectCommand implements the detect subcommand
 type DetectCommand struct {
-	options        DetectOptions
-	memoryMonitor  *MemoryMonitor
-	memoryConfig   *MemoryConfig
-	fileProcessor  *FileProcessor
+	options       DetectOptions
+	memoryMonitor *MemoryMonitor
+	memoryConfig  *MemoryConfig
+	fileProcessor *FileProcessor
 }
 
 // NewDetectCommand creates a new detect command
@@ -215,7 +217,7 @@ func NewDetectCommand(options DetectOptions) *DetectCommand {
 			options.RepoPath = wd
 		}
 	}
-	
+
 	// Set memory optimization defaults
 	if options.MaxMemoryMB == 0 {
 		options.MaxMemoryMB = 512 // Default 512MB
@@ -272,13 +274,13 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 	if !inMerge {
 		result.ErrorMessage = "Repository is not in a merge state - no conflicts to detect"
 		result.Success = true // This is not an error, just no conflicts
-		
+
 		// Output results even when no conflicts
 		if err := d.outputResults(result); err != nil {
 			result.ErrorMessage = fmt.Sprintf("Failed to output results: %v", err)
 			return result, err
 		}
-		
+
 		return result, nil
 	}
 
@@ -293,6 +295,9 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 	result.Summary.TotalFiles = len(conflictReport.ConflictedFiles)
 	result.Summary.TotalConflicts = conflictReport.TotalConflicts
 
+	logging.Logger.ConflictResolution("conflicts_detected",
+		zap.Int("total_files", result.Summary.TotalFiles),
+		zap.Int("total_conflicts", result.Summary.TotalConflicts))
 	if d.options.Verbose {
 		fmt.Printf("Found %d conflicted files with %d total conflicts\n",
 			result.Summary.TotalFiles, result.Summary.TotalConflicts)
@@ -306,7 +311,7 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 			fmt.Printf("Using batch size: %d, workers: %d, memory limit: %dMB\n",
 				d.memoryConfig.BatchSize, d.memoryConfig.WorkerPoolSize, d.memoryConfig.MaxMemoryMB)
 		}
-		
+
 		// Enable streaming by default for large repositories
 		if !d.options.EnableStreaming && d.options.OutputFormat == OutputFormatJSON {
 			d.options.EnableStreaming = true
@@ -314,13 +319,13 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 				fmt.Println("Automatically enabling streaming for large repository")
 			}
 		}
-		
+
 		// Reduce context lines for memory efficiency in very large repos
 		if result.Summary.TotalFiles > 1000 && d.options.MaxContextLines > 3 {
 			originalContextLines := d.options.MaxContextLines
 			d.options.MaxContextLines = 3
 			if d.options.Verbose {
-				fmt.Printf("Reducing context lines from %d to %d for memory efficiency\n", 
+				fmt.Printf("Reducing context lines from %d to %d for memory efficiency\n",
 					originalContextLines, d.options.MaxContextLines)
 			}
 		}
@@ -345,6 +350,9 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 		result.Summary.ExcludedFiles = result.Summary.TotalFiles - result.Summary.ProcessableFiles
 	}
 
+	logging.Logger.ConflictResolution("file_processing_summary",
+		zap.Int("processable_files", result.Summary.ProcessableFiles),
+		zap.Int("excluded_files", result.Summary.ExcludedFiles))
 	if d.options.Verbose {
 		fmt.Printf("Processable files: %d, Excluded files: %d\n",
 			result.Summary.ProcessableFiles, result.Summary.ExcludedFiles)
@@ -352,6 +360,10 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 
 	result.Success = true
 
+	logging.Logger.ConflictResolution("detection_completed",
+		zap.Bool("success", true),
+		zap.Int("total_files", result.Summary.TotalFiles),
+		zap.Int("total_conflicts", result.Summary.TotalConflicts))
 	if d.options.Verbose {
 		fmt.Printf("Conflict detection completed successfully\n")
 	}
@@ -408,6 +420,7 @@ func (d *DetectCommand) outputResults(result *DetectResult) error {
 		if err != nil {
 			return fmt.Errorf("failed to write to file %s: %w", d.options.OutputFile, err)
 		}
+		logging.Logger.InfoSafe("Results written to file", zap.String("output_file", d.options.OutputFile))
 		if d.options.Verbose {
 			fmt.Printf("Results written to: %s\n", d.options.OutputFile)
 		}
@@ -571,7 +584,7 @@ func (d *DetectCommand) executeStreamingProcessing(conflictReport *gitutils.Conf
 	// Process files using streaming approach
 	processedCount := 0
 	skippedCount := 0
-	
+
 	err := d.fileProcessor.ProcessFilesStreaming(
 		conflictReport.ConflictedFiles,
 		d,
@@ -582,13 +595,13 @@ func (d *DetectCommand) executeStreamingProcessing(conflictReport *gitutils.Conf
 				}
 				return
 			}
-			
+
 			if processResult.FilePayload == nil {
 				// File was skipped
 				skippedCount++
 				return
 			}
-			
+
 			// Write file to stream
 			if err := encoder.WriteFile(*processResult.FilePayload); err != nil {
 				if d.options.Verbose {
@@ -596,9 +609,9 @@ func (d *DetectCommand) executeStreamingProcessing(conflictReport *gitutils.Conf
 				}
 				return
 			}
-			
+
 			processedCount++
-			
+
 			// Progress reporting for large repositories
 			if d.options.Verbose && (processedCount%100 == 0 || processedCount+skippedCount == len(conflictReport.ConflictedFiles)) {
 				stats := d.memoryMonitor.GetMemoryStats()
@@ -618,13 +631,13 @@ func (d *DetectCommand) executeStreamingProcessing(conflictReport *gitutils.Conf
 
 	// Get final memory stats
 	finalStats := d.memoryMonitor.GetMemoryStats()
-	
+
 	// Write JSON footer
 	errorMessage := ""
 	if result.ErrorMessage != "" {
 		errorMessage = result.ErrorMessage
 	}
-	
+
 	if err := encoder.WriteFooter(finalStats, errorMessage); err != nil {
 		return fmt.Errorf("failed to write JSON footer: %w", err)
 	}
@@ -690,9 +703,9 @@ func DetectConflictsLargeRepo(repoPath string, outputFile string) (*DetectResult
 		OutputFile:      outputFile,
 		Verbose:         true,
 		EnableStreaming: true,
-		MaxMemoryMB:     128,  // Very conservative memory limit
-		BatchSize:       10,   // Small batches
-		WorkerPoolSize:  1,    // Single worker to minimize memory usage
+		MaxMemoryMB:     128, // Very conservative memory limit
+		BatchSize:       10,  // Small batches
+		WorkerPoolSize:  1,   // Single worker to minimize memory usage
 	}
 
 	cmd := NewDetectCommand(options)
@@ -706,4 +719,3 @@ func (d *DetectCommand) Close() {
 		d.fileProcessor.Close()
 	}
 }
-

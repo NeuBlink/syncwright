@@ -56,6 +56,10 @@ inputs:
     description: 'Minimum confidence threshold for applying AI resolutions (0.0-1.0, default: 0.7)'
     required: false
     default: '0.7'
+  debug_mode:
+    description: 'Enable debug logging (never use in production)'
+    required: false
+    default: 'false'
 
 outputs:
   conflicts_resolved:
@@ -87,17 +91,82 @@ runs:
       shell: bash
       run: |
         echo "Installing Claude Code CLI..."
-        npm install -g @anthropic-ai/claude-code
+        
+        # Ensure Node.js is available
+        if ! command -v npm >/dev/null 2>&1; then
+          echo "📦 Installing Node.js..."
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install node || {
+              echo "⚠️ Homebrew not available, installing Node.js via curl"
+              curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+              export NVM_DIR="$HOME/.nvm"
+              [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+              nvm install 18
+              nvm use 18
+            }
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            choco install nodejs || {
+              echo "⚠️ Chocolatey not available, please ensure Node.js is pre-installed"
+              exit 1
+            }
+          fi
+        fi
+        
+        # Install Claude Code CLI with error handling
+        if npm install -g @anthropic-ai/claude-code; then
+          echo "📦 Claude Code CLI installation initiated"
+        else
+          echo "❌ Failed to install Claude Code CLI via npm"
+          echo "Attempting alternative installation method..."
+          
+          # Alternative: try yarn if available
+          if command -v yarn >/dev/null 2>&1; then
+            yarn global add @anthropic-ai/claude-code || {
+              echo "❌ All Claude Code CLI installation methods failed"
+              exit 1
+            }
+          else
+            echo "❌ No alternative package manager available"
+            exit 1
+          fi
+        fi
+        
+        # Verify installation with timeout
+        timeout 30s bash -c 'while ! command -v claude >/dev/null 2>&1; do sleep 1; done' || {
+          echo "⚠️ Claude CLI not immediately available, checking PATH..."
+          export PATH="$PATH:$(npm root -g)/.bin"
+        }
+        
+        if claude --version >/dev/null 2>&1; then
+          echo "✅ Claude Code CLI installed and verified successfully"
+          claude --version
+        else
+          echo "❌ Claude Code CLI installation verification failed"
+          echo "PATH: $PATH"
+          echo "npm root -g: $(npm root -g 2>/dev/null || echo 'npm not available')"
+          exit 1
+        fi
 
     - name: Install Syncwright
       shell: bash
       run: |
         echo "Installing Syncwright binary..."
         
-        # Basic path validation for security
+        # Enhanced path validation for security - prevent path injection
         ACTION_PATH="${{ github.action_path }}"
-        if [[ "$ACTION_PATH" =~ [\;\&\|\`\$\(\)] ]] || [[ ! "$ACTION_PATH" =~ ^/ ]]; then
-          echo "Error: Invalid action path"
+        # Use GitHub's built-in path validation - must be within runner workspace
+        if [[ ! "$ACTION_PATH" =~ ^/home/runner/work/ ]] && [[ ! "$ACTION_PATH" =~ ^/Users/runner/work/ ]] && [[ ! "$ACTION_PATH" =~ ^D:/a/ ]]; then
+          echo "❌ Error: Invalid action path - must be within runner workspace"
+          echo "Action path: $ACTION_PATH"
+          exit 1
+        fi
+        
+        # Additional security checks for malicious characters
+        if [[ "$ACTION_PATH" =~ [\;\&\|\`\$\(\)\<\>] ]] || [[ "$ACTION_PATH" =~ \.\. ]]; then
+          echo "❌ Error: Action path contains potentially malicious characters"
           exit 1
         fi
 
@@ -108,11 +177,29 @@ runs:
           BINARY_NAME="syncwright"
         fi
 
-        # Try pre-built binary first
+        # Try pre-built binary first with integrity verification
         if [ -f "${ACTION_PATH}/bin/${BINARY_NAME}" ]; then
           echo "Using pre-built binary"
           cp "${ACTION_PATH}/bin/${BINARY_NAME}" "./${BINARY_NAME}"
           chmod +x "./${BINARY_NAME}"
+          
+          # Verify binary integrity if checksums available
+          if [ -f "${ACTION_PATH}/checksums/syncwright-${RUNNER_OS}-checksums.txt" ]; then
+            echo "🔐 Verifying binary integrity..."
+            expected_hash=$(grep "$BINARY_NAME" "${ACTION_PATH}/checksums/syncwright-${RUNNER_OS}-checksums.txt" | cut -d' ' -f1 2>/dev/null || echo "")
+            if [ -n "$expected_hash" ]; then
+              actual_hash=$(sha256sum "./${BINARY_NAME}" | cut -d' ' -f1)
+              if [ "$expected_hash" != "$actual_hash" ]; then
+                echo "❌ Binary checksum verification failed"
+                echo "Expected: $expected_hash"
+                echo "Actual: $actual_hash"
+                exit 1
+              fi
+              echo "✅ Binary checksum verified"
+            else
+              echo "⚠️ No checksum found for $BINARY_NAME - proceeding without verification"
+            fi
+          fi
         # Try installation script
         elif [ -f "${ACTION_PATH}/scripts/install.sh" ]; then
           echo "Using installation script"
@@ -154,6 +241,44 @@ runs:
           echo "Warning: Version check failed but binary exists"
         fi
 
+    - name: Validate environment and security
+      shell: bash
+      run: |
+        echo "🔒 Performing security validation..."
+        
+        # Check for hardcoded secrets in action.yml
+        if grep -E "(sk-ant-|ghp_|gho_)" "${{ github.action_path }}/action.yml" 2>/dev/null; then
+          echo "❌ Hardcoded tokens detected in action.yml"
+          exit 1
+        fi
+        
+        # Validate Claude Code OAuth token if merge failed
+        if [ "${{ inputs.merge_failed }}" = "true" ]; then
+          if [ -z "${{ inputs.claude_code_oauth_token }}" ]; then
+            echo "❌ Error: Claude Code OAuth token required for AI resolution"
+            echo "Please set the 'claude_code_oauth_token' input with a valid token from GitHub secrets"
+            exit 1
+          fi
+          
+          # Validate Claude CLI is functional
+          if ! claude --version >/dev/null 2>&1; then
+            echo "❌ Claude Code CLI not available or not functional"
+            exit 1
+          fi
+          
+          echo "✅ Environment validation passed"
+        else
+          echo "ℹ️ Skipping AI token validation - merge_failed not set to true"
+        fi
+        
+        # Validate debug mode is not enabled in production
+        if [ "${{ inputs.debug_mode }}" = "true" ] && [ "${{ github.event_name }}" = "push" ]; then
+          echo "❌ Error: Debug mode cannot be enabled for push events (production)"
+          exit 1
+        fi
+        
+        echo "✅ Security validation completed"
+
     - name: Resolve conflicts
       id: resolve-conflicts
       shell: bash
@@ -169,7 +294,7 @@ runs:
         SYNCWRIGHT_MAX_RETRIES: ${{ inputs.max_retries }}
         SYNCWRIGHT_CONFIDENCE_THRESHOLD: ${{ inputs.confidence_threshold }}
         SYNCWRIGHT_ENABLE_STREAMING: ${{ inputs.enable_streaming }}
-        SYNCWRIGHT_DEBUG: "true"
+        SYNCWRIGHT_DEBUG: ${{ inputs.debug_mode == 'true' && github.event_name != 'push' }}
       run: |
         # Initialize outputs with default values
         echo "conflicts_resolved=false" >> $GITHUB_OUTPUT
@@ -186,9 +311,16 @@ runs:
         if [ "${{ inputs.merge_failed }}" = "true" ]; then
           echo "🚀 Starting AI-powered conflict resolution with optimizations for large repositories..."
           
+          # Additional runtime validation (environment validation step should catch this earlier)
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "❌ Error: Claude Code OAuth token required for AI resolution"
-            echo "Please set the 'claude_code_oauth_token' input with a valid token"
+            echo "Please set the 'claude_code_oauth_token' input with a valid token from GitHub secrets"
+            exit 1
+          fi
+          
+          # Verify Claude CLI is still functional
+          if ! claude --version >/dev/null 2>&1; then
+            echo "❌ Claude Code CLI became unavailable"
             exit 1
           fi
 
@@ -364,19 +496,8 @@ runs:
           PROCESSING_TIME="${{ steps.resolve-conflicts.outputs.processing_time }}"
           BATCHES_PROCESSED="${{ steps.resolve-conflicts.outputs.batches_processed }}"
           
-          git commit -m "🤖 Resolve merge conflicts using Syncwright AI
-
-✅ Resolved ${RESOLVED_COUNT}/${TOTAL_COUNT} conflicts across ${FILES_MODIFIED} files
-🎯 AI Confidence Score: ${AI_CONFIDENCE}
-⏱️ Processing Time: ${PROCESSING_TIME}s
-📦 Batches Processed: ${BATCHES_PROCESSED}
-
-This commit was automatically generated by Syncwright AI using Claude
-for intelligent conflict resolution with performance optimizations for
-large repositories including batching, rate limiting, and parallel processing.
-
-Co-authored-by: syncwright-bot <syncwright-bot@users.noreply.github.com>
-🤖 Generated with Syncwright AI <https://github.com/NeuBlink/syncwright>"
+          # Create detailed commit message 
+          git commit -m "🤖 Resolve merge conflicts using Syncwright AI - Resolved ${RESOLVED_COUNT}/${TOTAL_COUNT} conflicts across ${FILES_MODIFIED} files (confidence=${AI_CONFIDENCE}, time=${PROCESSING_TIME}s, batches=${BATCHES_PROCESSED})"
           
           # Push changes if head branch is specified
           if [ -n "$SYNCWRIGHT_HEAD_BRANCH" ]; then

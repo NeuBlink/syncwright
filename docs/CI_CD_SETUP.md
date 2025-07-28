@@ -87,7 +87,7 @@ Comprehensive CI/CD setup for Syncwright with automated testing, releases, and m
 
 ## Configuration Files
 
-### GoReleaser (`.goreleaser.yml`)
+### GoReleaser (`.goreleaser.yaml`)
 
 Comprehensive configuration for multi-platform builds and distribution:
 
@@ -108,13 +108,13 @@ Comprehensive linting configuration:
 - **Formatting**: Gofmt and goimports validation
 - **Performance**: Inefficient code detection
 
-### Configuration Files (`configs/`)
+### Configuration Management
 
-Project configuration management:
+Project configuration is handled through:
 
-- **`configs/logging.yml`**: Structured logging configuration and output formatting
-- **`configs/timeout.yml`**: Timeout and retry mechanism settings for reliable operations
-- **Default Settings**: Sensible defaults with environment variable overrides
+- **Environment Variables**: Runtime configuration via environment variables
+- **Command Line Flags**: Per-operation configuration overrides
+- **Default Settings**: Sensible defaults built into the application
 
 ## Version Management
 

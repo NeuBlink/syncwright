@@ -15,43 +15,41 @@ import (
 
 // BatchOptions contains options for the batch command
 type BatchOptions struct {
-	RepoPath     string
-	OutputFile   string
-	BatchSize    int
-	Concurrency  int
-	GroupBy      string // "language", "file", "size", "none"
-	MaxTokens    int
-	TimeoutSec   int
-	APIKey       string
-	APIEndpoint  string
+	RepoPath      string
+	OutputFile    string
+	BatchSize     int
+	Concurrency   int
+	GroupBy       string // "language", "file", "size", "none"
+	MaxTokens     int
+	TimeoutSec    int
 	MinConfidence float64
-	AutoApply    bool
-	DryRun       bool
-	Verbose      bool
-	Progress     bool
-	Streaming    bool
-	BackupFiles  bool
-	MaxRetries   int
+	AutoApply     bool
+	DryRun        bool
+	Verbose       bool
+	Progress      bool
+	Streaming     bool
+	BackupFiles   bool
+	MaxRetries    int
 }
 
 // BatchResult represents the result of batch processing
 type BatchResult struct {
-	Success              bool                        `json:"success"`
-	TotalConflicts       int                         `json:"total_conflicts"`
-	TotalBatches         int                         `json:"total_batches"`
-	ProcessedBatches     int                         `json:"processed_batches"`
-	SuccessfulBatches    int                         `json:"successful_batches"`
-	FailedBatches        int                         `json:"failed_batches"`
-	TotalResolutions     int                         `json:"total_resolutions"`
-	AppliedResolutions   int                         `json:"applied_resolutions"`
-	SkippedResolutions   int                         `json:"skipped_resolutions"`
-	FailedResolutions    int                         `json:"failed_resolutions"`
-	ProcessingTimeMs     int64                       `json:"processing_time_ms"`
-	AverageConfidence    float64                     `json:"average_confidence"`
-	BatchResults         []BatchItemResult           `json:"batch_results"`
-	ErrorMessage         string                      `json:"error_message,omitempty"`
-	Warnings             []string                    `json:"warnings,omitempty"`
-	Performance          BatchPerformanceMetrics     `json:"performance"`
+	Success            bool                    `json:"success"`
+	TotalConflicts     int                     `json:"total_conflicts"`
+	TotalBatches       int                     `json:"total_batches"`
+	ProcessedBatches   int                     `json:"processed_batches"`
+	SuccessfulBatches  int                     `json:"successful_batches"`
+	FailedBatches      int                     `json:"failed_batches"`
+	TotalResolutions   int                     `json:"total_resolutions"`
+	AppliedResolutions int                     `json:"applied_resolutions"`
+	SkippedResolutions int                     `json:"skipped_resolutions"`
+	FailedResolutions  int                     `json:"failed_resolutions"`
+	ProcessingTimeMs   int64                   `json:"processing_time_ms"`
+	AverageConfidence  float64                 `json:"average_confidence"`
+	BatchResults       []BatchItemResult       `json:"batch_results"`
+	ErrorMessage       string                  `json:"error_message,omitempty"`
+	Warnings           []string                `json:"warnings,omitempty"`
+	Performance        BatchPerformanceMetrics `json:"performance"`
 }
 
 // BatchItemResult represents the result of processing a single batch
@@ -84,12 +82,12 @@ type BatchPerformanceMetrics struct {
 
 // ConflictBatch represents a group of conflicts to be processed together
 type ConflictBatch struct {
-	ID            int                              `json:"id"`
-	Files         []payload.ConflictFilePayload    `json:"files"`
-	TotalConflicts int                             `json:"total_conflicts"`
-	EstimatedTokens int                            `json:"estimated_tokens"`
-	GroupingCriteria string                       `json:"grouping_criteria"`
-	Priority       int                             `json:"priority"`
+	ID               int                           `json:"id"`
+	Files            []payload.ConflictFilePayload `json:"files"`
+	TotalConflicts   int                           `json:"total_conflicts"`
+	EstimatedTokens  int                           `json:"estimated_tokens"`
+	GroupingCriteria string                        `json:"grouping_criteria"`
+	Priority         int                           `json:"priority"`
 }
 
 // BatchCommand implements the batch subcommand
@@ -122,9 +120,6 @@ func NewBatchCommand(options BatchOptions) *BatchCommand {
 	}
 	if options.MaxRetries == 0 {
 		options.MaxRetries = 3
-	}
-	if options.APIEndpoint == "" {
-		options.APIEndpoint = "https://api.anthropic.com/v1/claude-code/resolve-conflicts"
 	}
 	if options.RepoPath == "" {
 		if wd, err := os.Getwd(); err == nil {
@@ -164,7 +159,7 @@ func (b *BatchCommand) Execute() (*BatchResult, error) {
 		fmt.Printf("🔍 Step 1: Detecting conflicts...\n")
 	}
 	detectStart := time.Now()
-	
+
 	conflictPayload, err := b.detectConflicts(result)
 	if err != nil {
 		return result, err
@@ -190,7 +185,7 @@ func (b *BatchCommand) Execute() (*BatchResult, error) {
 		fmt.Printf("📦 Step 2: Grouping conflicts into batches...\n")
 	}
 	groupingStart := time.Now()
-	
+
 	batches, err := b.createBatches(conflictPayload, result)
 	if err != nil {
 		return result, err
@@ -208,7 +203,7 @@ func (b *BatchCommand) Execute() (*BatchResult, error) {
 		fmt.Printf("🤖 Step 3: Processing batches with AI...\n")
 	}
 	aiStart := time.Now()
-	
+
 	err = b.processBatchesConcurrently(batches, result)
 	if err != nil {
 		return result, err
@@ -222,7 +217,7 @@ func (b *BatchCommand) Execute() (*BatchResult, error) {
 			fmt.Printf("✅ Step 4: Applying resolutions...\n")
 		}
 		applicationStart := time.Now()
-		
+
 		err = b.applyBatchResults(result)
 		if err != nil {
 			return result, err
@@ -301,7 +296,7 @@ func (b *BatchCommand) createBatches(conflictPayload *payload.ConflictPayload, r
 // createBatchesByLanguage groups conflicts by programming language
 func (b *BatchCommand) createBatchesByLanguage(conflictPayload *payload.ConflictPayload) ([]ConflictBatch, error) {
 	languageGroups := make(map[string][]payload.ConflictFilePayload)
-	
+
 	// Group files by language
 	for _, file := range conflictPayload.Files {
 		lang := file.Language
@@ -330,7 +325,7 @@ func (b *BatchCommand) createBatchesByLanguage(conflictPayload *payload.Conflict
 // createBatchesByFile creates one batch per file
 func (b *BatchCommand) createBatchesByFile(conflictPayload *payload.ConflictPayload) ([]ConflictBatch, error) {
 	var batches []ConflictBatch
-	
+
 	for i, file := range conflictPayload.Files {
 		batch := ConflictBatch{
 			ID:               i,
@@ -363,14 +358,14 @@ func (b *BatchCommand) createBatchesBySize(conflictPayload *payload.ConflictPayl
 
 	for _, file := range conflictPayload.Files {
 		fileTokens := b.estimateTokens([]payload.ConflictFilePayload{file})
-		
+
 		// If adding this file would exceed token limit, start new batch
 		if currentTokens+fileTokens > b.options.MaxTokens && len(currentBatch.Files) > 0 {
 			currentBatch.TotalConflicts = b.countConflictsInFiles(currentBatch.Files)
 			currentBatch.EstimatedTokens = currentTokens
 			currentBatch.Priority = currentBatch.TotalConflicts
 			batches = append(batches, currentBatch)
-			
+
 			batchID++
 			currentBatch = ConflictBatch{
 				ID:               batchID,
@@ -381,14 +376,14 @@ func (b *BatchCommand) createBatchesBySize(conflictPayload *payload.ConflictPayl
 
 		currentBatch.Files = append(currentBatch.Files, file)
 		currentTokens += fileTokens
-		
+
 		// If a single file exceeds the token limit, force it into its own batch
 		if fileTokens > b.options.MaxTokens {
 			currentBatch.TotalConflicts = b.countConflictsInFiles(currentBatch.Files)
 			currentBatch.EstimatedTokens = currentTokens
 			currentBatch.Priority = currentBatch.TotalConflicts
 			batches = append(batches, currentBatch)
-			
+
 			batchID++
 			currentBatch = ConflictBatch{
 				ID:               batchID,
@@ -493,13 +488,13 @@ func (b *BatchCommand) estimateTokens(files []payload.ConflictFilePayload) int {
 func (b *BatchCommand) processBatchesConcurrently(batches []ConflictBatch, result *BatchResult) error {
 	// Create a semaphore to control concurrency
 	sem := make(chan struct{}, b.options.Concurrency)
-	
+
 	// Channel to collect results
 	resultsChan := make(chan BatchItemResult, len(batches))
-	
+
 	// WaitGroup to wait for all goroutines
 	var wg sync.WaitGroup
-	
+
 	// Progress reporter
 	var progress *ProgressReporter
 	if b.options.Progress {
@@ -511,20 +506,20 @@ func (b *BatchCommand) processBatchesConcurrently(batches []ConflictBatch, resul
 		wg.Add(1)
 		go func(batch ConflictBatch) {
 			defer wg.Done()
-			
+
 			// Acquire semaphore
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			
+
 			// Process the batch
 			batchResult := b.processSingleBatch(batch)
-			
+
 			// Send result
 			resultsChan <- batchResult
-			
+
 			// Update progress
 			if progress != nil {
-				progress.Update(len(result.BatchResults)+1, 
+				progress.Update(len(result.BatchResults)+1,
 					fmt.Sprintf("Batch %d/%d completed", len(result.BatchResults)+1, len(batches)))
 			}
 		}(batch)
@@ -540,7 +535,7 @@ func (b *BatchCommand) processBatchesConcurrently(batches []ConflictBatch, resul
 	for batchResult := range resultsChan {
 		result.BatchResults = append(result.BatchResults, batchResult)
 		result.ProcessedBatches++
-		
+
 		if batchResult.Success {
 			result.SuccessfulBatches++
 			result.TotalResolutions += len(batchResult.Resolutions)
@@ -550,7 +545,7 @@ func (b *BatchCommand) processBatchesConcurrently(batches []ConflictBatch, resul
 		} else {
 			result.FailedBatches++
 			if batchResult.ErrorMessage != "" {
-				result.Warnings = append(result.Warnings, 
+				result.Warnings = append(result.Warnings,
 					fmt.Sprintf("Batch %d failed: %s", batchResult.BatchID, batchResult.ErrorMessage))
 			}
 		}
@@ -571,7 +566,7 @@ func (b *BatchCommand) processBatchesConcurrently(batches []ConflictBatch, resul
 // processSingleBatch processes a single batch of conflicts
 func (b *BatchCommand) processSingleBatch(batch ConflictBatch) BatchItemResult {
 	startTime := time.Now()
-	
+
 	result := BatchItemResult{
 		BatchID:          batch.ID,
 		ConflictsInBatch: batch.TotalConflicts,
@@ -593,8 +588,6 @@ func (b *BatchCommand) processSingleBatch(batch ConflictBatch) BatchItemResult {
 	// Create AI apply options for this batch
 	aiOptions := AIApplyOptions{
 		RepoPath:       b.options.RepoPath,
-		APIKey:         b.options.APIKey,
-		APIEndpoint:    b.options.APIEndpoint,
 		DryRun:         b.options.DryRun,
 		Verbose:        false, // Suppress individual batch verbosity
 		AutoApply:      b.options.AutoApply,
@@ -634,7 +627,14 @@ func (b *BatchCommand) processSingleBatch(batch ConflictBatch) BatchItemResult {
 	aiOptions.PayloadFile = tmpFile.Name()
 
 	// Process with AI
-	aiCmd := NewAIApplyCommand(aiOptions)
+	aiCmd, err := NewAIApplyCommand(aiOptions)
+	if err != nil {
+		result.ErrorMessage = fmt.Sprintf("Failed to create AI command: %v", err)
+		result.ProcessingTimeMs = time.Since(startTime).Milliseconds()
+		return result
+	}
+	defer aiCmd.Close()
+
 	aiResult, err := aiCmd.Execute()
 	if err != nil {
 		result.ErrorMessage = fmt.Sprintf("AI processing failed: %v", err)
@@ -711,7 +711,7 @@ func (b *BatchCommand) printBatchResult(batchResult BatchItemResult) {
 	if !batchResult.Success {
 		status = "❌"
 	}
-	
+
 	fmt.Printf("%s Batch %d: %d conflicts, %d resolutions (%.1fs)\n",
 		status, batchResult.BatchID, batchResult.ConflictsInBatch,
 		len(batchResult.Resolutions), float64(batchResult.ProcessingTimeMs)/1000.0)
@@ -772,12 +772,9 @@ func (b *BatchCommand) outputResults(result *BatchResult) error {
 }
 
 // BatchConflicts is a convenience function for batch conflict resolution
-func BatchConflicts(repoPath, apiKey string, options BatchOptions) (*BatchResult, error) {
+func BatchConflicts(repoPath string, options BatchOptions) (*BatchResult, error) {
 	if options.RepoPath == "" {
 		options.RepoPath = repoPath
-	}
-	if options.APIKey == "" {
-		options.APIKey = apiKey
 	}
 
 	cmd := NewBatchCommand(options)

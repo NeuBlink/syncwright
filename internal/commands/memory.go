@@ -10,18 +10,18 @@ import (
 
 // MemoryMonitor provides memory usage tracking and limits for large repository processing
 type MemoryMonitor struct {
-	maxMemoryMB    int64
+	maxMemoryMB      int64
 	warningThreshold float64
-	checkInterval  time.Duration
-	
+	checkInterval    time.Duration
+
 	// Atomic counters for concurrent access
 	currentFiles   int64
 	processedFiles int64
 	skippedFiles   int64
-	
+
 	// Memory stats
-	lastMemCheck   time.Time
-	peakMemoryMB   int64
+	lastMemCheck time.Time
+	peakMemoryMB int64
 }
 
 // MemoryStats represents current memory usage statistics
@@ -40,7 +40,7 @@ func NewMemoryMonitor(maxMemoryMB int64) *MemoryMonitor {
 	if maxMemoryMB <= 0 {
 		maxMemoryMB = 512 // Default 512MB limit
 	}
-	
+
 	return &MemoryMonitor{
 		maxMemoryMB:      maxMemoryMB,
 		warningThreshold: 0.8, // Warn at 80% of limit
@@ -52,15 +52,15 @@ func NewMemoryMonitor(maxMemoryMB int64) *MemoryMonitor {
 // CheckMemoryPressure returns true if memory usage is above the warning threshold
 func (m *MemoryMonitor) CheckMemoryPressure() (bool, *MemoryStats, error) {
 	stats := m.GetMemoryStats()
-	
+
 	// Update peak memory
 	if stats.AllocMB > atomic.LoadInt64(&m.peakMemoryMB) {
 		atomic.StoreInt64(&m.peakMemoryMB, stats.AllocMB)
 	}
-	
+
 	threshold := float64(m.maxMemoryMB) * m.warningThreshold
 	isUnderPressure := float64(stats.AllocMB) > threshold
-	
+
 	return isUnderPressure, stats, nil
 }
 
@@ -68,7 +68,7 @@ func (m *MemoryMonitor) CheckMemoryPressure() (bool, *MemoryStats, error) {
 func (m *MemoryMonitor) GetMemoryStats() *MemoryStats {
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
-	
+
 	return &MemoryStats{
 		AllocMB:        int64(memStats.Alloc / 1024 / 1024),
 		SysMB:          int64(memStats.Sys / 1024 / 1024),
@@ -105,7 +105,7 @@ func (m *MemoryMonitor) ForceGC() {
 func (m *MemoryMonitor) StartMemoryWatcher(ctx context.Context, onPressure func(*MemoryStats)) {
 	ticker := time.NewTicker(m.checkInterval)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -114,14 +114,14 @@ func (m *MemoryMonitor) StartMemoryWatcher(ctx context.Context, onPressure func(
 			if time.Since(m.lastMemCheck) < m.checkInterval {
 				continue
 			}
-			
+
 			underPressure, stats, err := m.CheckMemoryPressure()
 			if err != nil {
 				continue // Skip this check on error
 			}
-			
+
 			m.lastMemCheck = time.Now()
-			
+
 			if underPressure && onPressure != nil {
 				onPressure(stats)
 			}
@@ -143,8 +143,8 @@ type MemoryConfig struct {
 func DefaultMemoryConfig() *MemoryConfig {
 	return &MemoryConfig{
 		MaxMemoryMB:      512,
-		BatchSize:        50,  // Process 50 files at a time
-		WorkerPoolSize:   4,   // 4 concurrent workers
+		BatchSize:        50, // Process 50 files at a time
+		WorkerPoolSize:   4,  // 4 concurrent workers
 		EnableStreaming:  true,
 		ForceGCInterval:  30 * time.Second,
 		ProgressInterval: 5 * time.Second,
@@ -154,17 +154,17 @@ func DefaultMemoryConfig() *MemoryConfig {
 // OptimizeForLargeRepo adjusts config for repositories with >1000 files
 func (c *MemoryConfig) OptimizeForLargeRepo(fileCount int) {
 	if fileCount > 1000 {
-		c.BatchSize = 25          // Smaller batches
-		c.WorkerPoolSize = 2      // Fewer workers
+		c.BatchSize = 25                     // Smaller batches
+		c.WorkerPoolSize = 2                 // Fewer workers
 		c.ForceGCInterval = 15 * time.Second // More frequent GC
-		c.MaxMemoryMB = 256       // Lower memory limit
+		c.MaxMemoryMB = 256                  // Lower memory limit
 	}
-	
+
 	if fileCount > 5000 {
-		c.BatchSize = 10          // Even smaller batches
-		c.WorkerPoolSize = 1      // Single worker
+		c.BatchSize = 10     // Even smaller batches
+		c.WorkerPoolSize = 1 // Single worker
 		c.ForceGCInterval = 10 * time.Second
-		c.MaxMemoryMB = 128       // Minimal memory limit
+		c.MaxMemoryMB = 128 // Minimal memory limit
 	}
 }
 

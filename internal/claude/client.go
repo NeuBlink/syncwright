@@ -10,6 +10,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/NeuBlink/syncwright/internal/logging"
+	"go.uber.org/zap"
 )
 
 // ClaudeClient represents a client for interacting with Claude Code CLI
@@ -69,11 +72,11 @@ type ClaudeResponse struct {
 
 // ClaudeAction represents an action performed by Claude
 type ClaudeAction struct {
-	Type      string                 `json:"type"`      // "read", "write", "bash"
-	Target    string                 `json:"target"`    // file path or command
-	Content   string                 `json:"content"`   // content for write actions
-	Result    string                 `json:"result"`    // result of the action
-	Success   bool                   `json:"success"`   // whether the action succeeded
+	Type      string                 `json:"type"`    // "read", "write", "bash"
+	Target    string                 `json:"target"`  // file path or command
+	Content   string                 `json:"content"` // content for write actions
+	Result    string                 `json:"result"`  // result of the action
+	Success   bool                   `json:"success"` // whether the action succeeded
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 	Timestamp time.Time              `json:"timestamp"`
 }
@@ -105,9 +108,9 @@ func NewClaudeClient(config *Config) (*ClaudeClient, error) {
 // DefaultConfig returns a default configuration for Claude Code CLI with optimized settings for large repositories
 func DefaultConfig() *Config {
 	return &Config{
-		CLIPath:          "claude", // Assume it's in PATH
-		MaxTurns:         10, // Increased for complex conflicts and batching
-		TimeoutSeconds:   300, // Extended timeout for large repository processing
+		CLIPath:          "claude",                                                                     // Assume it's in PATH
+		MaxTurns:         10,                                                                           // Increased for complex conflicts and batching
+		TimeoutSeconds:   300,                                                                          // Extended timeout for large repository processing
 		AllowedTools:     []string{"Read", "Write", "Edit", "MultiEdit", "Bash", "Grep", "Glob", "LS"}, // Enhanced tools for efficient conflict resolution
 		OutputFormat:     "json",
 		PrintMode:        true, // Non-interactive mode for automation
@@ -172,6 +175,7 @@ func (c *ClaudeClient) checkAvailability() error {
 	c.isAvailable = true
 	c.lastChecked = time.Now()
 
+	logging.Logger.InfoSafe("Claude CLI available", zap.String("version", strings.TrimSpace(outputStr)))
 	if c.config.Verbose {
 		fmt.Printf("Claude Code CLI version: %s", strings.TrimSpace(outputStr))
 	}
@@ -210,6 +214,9 @@ func (c *ClaudeClient) ExecuteCommand(ctx context.Context, command *ClaudeComman
 	// Set up stdin for the prompt
 	cmd.Stdin = strings.NewReader(command.Prompt)
 
+	logging.Logger.DebugSafe("Executing Claude CLI command",
+		zap.String("cli_path", c.config.CLIPath),
+		zap.Strings("args", args))
 	if c.config.Verbose {
 		fmt.Printf("Executing Claude CLI: %s %s\n", c.config.CLIPath, strings.Join(args, " "))
 	}
@@ -313,10 +320,10 @@ func (c *ClaudeClient) parseJSONResponse(output []byte) (*ClaudeResponse, error)
 // parseTextResponse parses text output from Claude
 func (c *ClaudeClient) parseTextResponse(output []byte) (*ClaudeResponse, error) {
 	content := string(output)
-	
+
 	// Extract actions from text output using patterns
 	actions := c.extractActionsFromText(content)
-	
+
 	return &ClaudeResponse{
 		Success: true,
 		Content: content,
@@ -327,13 +334,13 @@ func (c *ClaudeClient) parseTextResponse(output []byte) (*ClaudeResponse, error)
 // extractActionsFromText extracts actions from Claude's text output
 func (c *ClaudeClient) extractActionsFromText(content string) []ClaudeAction {
 	var actions []ClaudeAction
-	
+
 	// Look for common patterns that indicate Claude performed actions
 	scanner := bufio.NewScanner(strings.NewReader(content))
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		// Pattern for file reads: "Reading file: path/to/file"
 		if readMatch := regexp.MustCompile(`(?i)reading\s+file:?\s+(.+)`).FindStringSubmatch(line); readMatch != nil {
 			actions = append(actions, ClaudeAction{
@@ -343,7 +350,7 @@ func (c *ClaudeClient) extractActionsFromText(content string) []ClaudeAction {
 				Timestamp: time.Now(),
 			})
 		}
-		
+
 		// Pattern for file writes: "Writing to file: path/to/file"
 		if writeMatch := regexp.MustCompile(`(?i)writing\s+to\s+file:?\s+(.+)`).FindStringSubmatch(line); writeMatch != nil {
 			actions = append(actions, ClaudeAction{
@@ -353,7 +360,7 @@ func (c *ClaudeClient) extractActionsFromText(content string) []ClaudeAction {
 				Timestamp: time.Now(),
 			})
 		}
-		
+
 		// Pattern for bash commands: "Executing: command"
 		if bashMatch := regexp.MustCompile(`(?i)executing:?\s+(.+)`).FindStringSubmatch(line); bashMatch != nil {
 			actions = append(actions, ClaudeAction{
@@ -364,7 +371,7 @@ func (c *ClaudeClient) extractActionsFromText(content string) []ClaudeAction {
 			})
 		}
 	}
-	
+
 	return actions
 }
 
@@ -372,7 +379,7 @@ func (c *ClaudeClient) extractActionsFromText(content string) []ClaudeAction {
 func (c *ClaudeClient) ExecuteConflictResolution(ctx context.Context, prompt string, contextData map[string]interface{}) (*ClaudeResponse, error) {
 	// Build context string from data
 	contextStr := c.buildContextString(contextData)
-	
+
 	command := &ClaudeCommand{
 		Prompt:  prompt,
 		Context: contextStr,
@@ -380,7 +387,7 @@ func (c *ClaudeClient) ExecuteConflictResolution(ctx context.Context, prompt str
 			"task-type": "conflict-resolution",
 		},
 	}
-	
+
 	return c.ExecuteCommand(ctx, command)
 }
 
@@ -389,24 +396,24 @@ func (c *ClaudeClient) buildContextString(contextData map[string]interface{}) st
 	if len(contextData) == 0 {
 		return ""
 	}
-	
+
 	var parts []string
-	
+
 	// Add repository information
 	if repoPath, ok := contextData["repo_path"].(string); ok && repoPath != "" {
 		parts = append(parts, fmt.Sprintf("Repository: %s", repoPath))
 	}
-	
+
 	// Add conflict information
 	if conflictCount, ok := contextData["conflict_count"].(int); ok && conflictCount > 0 {
 		parts = append(parts, fmt.Sprintf("Total conflicts: %d", conflictCount))
 	}
-	
+
 	// Add file information
 	if files, ok := contextData["files"].([]string); ok && len(files) > 0 {
 		parts = append(parts, fmt.Sprintf("Affected files: %s", strings.Join(files, ", ")))
 	}
-	
+
 	return strings.Join(parts, "\n")
 }
 
@@ -433,79 +440,84 @@ func (c *ClaudeClient) GetSessionID() string {
 // ExecuteWithRetry executes a command with enhanced retry logic and intelligent backoff
 func (c *ClaudeClient) ExecuteWithRetry(ctx context.Context, command *ClaudeCommand, maxRetries int) (*ClaudeResponse, error) {
 	var lastErr error
-	
+
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
+			logging.Logger.WarnSafe("Retrying Claude CLI command",
+				zap.Int("attempt", attempt+1),
+				zap.Int("max_attempts", maxRetries+1),
+				zap.Error(lastErr))
 			if c.config.Verbose {
 				fmt.Printf("Retrying Claude CLI command (attempt %d/%d)\n", attempt+1, maxRetries+1)
 			}
-			
+
 			// Intelligent backoff based on error type
 			backoff := c.calculateBackoff(attempt, lastErr)
-			
+
+			logging.Logger.DebugSafe("Waiting before retry", zap.Duration("backoff", backoff))
 			if c.config.Verbose {
 				fmt.Printf("Waiting %v before retry...\n", backoff)
 			}
-			
+
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-time.After(backoff):
 			}
 		}
-		
+
 		response, err := c.ExecuteCommand(ctx, command)
 		if err == nil && response.Success {
 			return response, nil
 		}
-		
+
 		lastErr = err
-		
+
 		// Check if we should retry based on the error
 		if !c.shouldRetry(err) {
 			break
 		}
 	}
-	
+
 	return nil, fmt.Errorf("command failed after %d attempts: %w", maxRetries+1, lastErr)
 }
 
 // calculateBackoff calculates intelligent backoff duration based on error type and attempt number
 func (c *ClaudeClient) calculateBackoff(attempt int, err error) time.Duration {
 	baseDelay := time.Second
-	
+
 	if err != nil {
 		errStr := strings.ToLower(err.Error())
-		
+
 		// Longer backoff for rate limiting
-		if strings.Contains(errStr, "rate limit") || 
-		   strings.Contains(errStr, "too many requests") ||
-		   strings.Contains(errStr, "429") ||
-		   strings.Contains(errStr, "throttled") {
+		if strings.Contains(errStr, "rate limit") ||
+			strings.Contains(errStr, "too many requests") ||
+			strings.Contains(errStr, "429") ||
+			strings.Contains(errStr, "throttled") {
 			baseDelay = 5 * time.Second
 		}
-		
+
 		// Moderate backoff for server errors
-		if strings.Contains(errStr, "500") || 
-		   strings.Contains(errStr, "502") || 
-		   strings.Contains(errStr, "503") || 
-		   strings.Contains(errStr, "504") {
+		if strings.Contains(errStr, "500") ||
+			strings.Contains(errStr, "502") ||
+			strings.Contains(errStr, "503") ||
+			strings.Contains(errStr, "504") {
 			baseDelay = 2 * time.Second
 		}
 	}
-	
+
 	// Exponential backoff with jitter
 	exponential := time.Duration(1<<uint(attempt)) * baseDelay
-	
+
 	// Add random jitter (±25%) to prevent thundering herd
 	jitter := time.Duration(float64(exponential) * (0.75 + 0.5*rand.Float64()))
-	
+
 	// Cap maximum backoff at 30 seconds
 	maxBackoff := 30 * time.Second
 	if jitter > maxBackoff {
 		jitter = maxBackoff
 	}
-	
+
 	return jitter
 }
 
@@ -514,49 +526,49 @@ func (c *ClaudeClient) shouldRetry(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errStr := strings.ToLower(err.Error())
-	
+
 	// Retry on timeout errors
 	if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline exceeded") {
 		return true
 	}
-	
+
 	// Retry on temporary network issues
 	if strings.Contains(errStr, "connection") || strings.Contains(errStr, "network") {
 		return true
 	}
-	
+
 	// Retry on rate limiting (common API rate limit indicators)
-	if strings.Contains(errStr, "rate limit") || 
-	   strings.Contains(errStr, "too many requests") ||
-	   strings.Contains(errStr, "429") ||
-	   strings.Contains(errStr, "quota exceeded") ||
-	   strings.Contains(errStr, "throttled") {
+	if strings.Contains(errStr, "rate limit") ||
+		strings.Contains(errStr, "too many requests") ||
+		strings.Contains(errStr, "429") ||
+		strings.Contains(errStr, "quota exceeded") ||
+		strings.Contains(errStr, "throttled") {
 		return true
 	}
-	
+
 	// Retry on temporary server errors
-	if strings.Contains(errStr, "500") || 
-	   strings.Contains(errStr, "502") || 
-	   strings.Contains(errStr, "503") || 
-	   strings.Contains(errStr, "504") ||
-	   strings.Contains(errStr, "internal server error") ||
-	   strings.Contains(errStr, "service unavailable") {
+	if strings.Contains(errStr, "500") ||
+		strings.Contains(errStr, "502") ||
+		strings.Contains(errStr, "503") ||
+		strings.Contains(errStr, "504") ||
+		strings.Contains(errStr, "internal server error") ||
+		strings.Contains(errStr, "service unavailable") {
 		return true
 	}
-	
+
 	// Don't retry on validation or configuration errors
-	if strings.Contains(errStr, "invalid") || 
-	   strings.Contains(errStr, "not found") ||
-	   strings.Contains(errStr, "unauthorized") ||
-	   strings.Contains(errStr, "forbidden") ||
-	   strings.Contains(errStr, "400") ||
-	   strings.Contains(errStr, "401") ||
-	   strings.Contains(errStr, "403") {
+	if strings.Contains(errStr, "invalid") ||
+		strings.Contains(errStr, "not found") ||
+		strings.Contains(errStr, "unauthorized") ||
+		strings.Contains(errStr, "forbidden") ||
+		strings.Contains(errStr, "400") ||
+		strings.Contains(errStr, "401") ||
+		strings.Contains(errStr, "403") {
 		return false
 	}
-	
+
 	return false
 }
 

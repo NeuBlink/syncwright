@@ -16,15 +16,15 @@ func validateGitPath(path string) error {
 	if path == "" {
 		return fmt.Errorf("path cannot be empty")
 	}
-	
+
 	// Clean the path to resolve . and .. components
 	cleanPath := filepath.Clean(path)
-	
+
 	// Check for basic path traversal attempts and dangerous characters
 	if strings.ContainsAny(cleanPath, ";|&`$") {
 		return fmt.Errorf("potentially dangerous characters in path: %s", path)
 	}
-	
+
 	return nil
 }
 

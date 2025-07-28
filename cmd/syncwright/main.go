@@ -3,13 +3,18 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/NeuBlink/syncwright/internal/commands"
 	"github.com/NeuBlink/syncwright/internal/format"
+	"github.com/NeuBlink/syncwright/internal/gitutils"
 	"github.com/NeuBlink/syncwright/internal/iojson"
+	"github.com/NeuBlink/syncwright/internal/logging"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 // Build information - set via ldflags during build
@@ -21,8 +26,13 @@ var (
 )
 
 func main() {
+	// Initialize logging
+	config := logging.GetDefaultConfig()
+	logging.MustInitialize(config)
+	defer logging.Sync()
+
 	if err := newRootCmd().Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		logging.Logger.ErrorSafe("Command execution failed", zap.Error(err))
 		os.Exit(1)
 	}
 }
@@ -32,24 +42,82 @@ func buildVersionString() string {
 	if commit == "none" || date == "unknown" {
 		return version
 	}
-	
+
 	// Safely truncate commit hash to at most 8 characters
 	commitDisplay := commit
 	if len(commit) > 8 {
 		commitDisplay = commit[:8]
 	}
-	
+
 	return fmt.Sprintf("%s (commit: %s, built: %s, by: %s)", version, commitDisplay, date, builtBy)
 }
 
 func newRootCmd() *cobra.Command {
+	var (
+		logLevel  string
+		logFormat string
+		verbose   bool
+		debug     bool
+	)
+
 	cmd := &cobra.Command{
 		Use:   "syncwright",
 		Short: "Syncwright - Git merge conflict resolution toolkit",
 		Long: `Syncwright is a CLI tool for detecting, analyzing, and resolving Git merge conflicts
 through a pipeline of JSON-based operations that can be automated or AI-assisted.`,
 		Version: buildVersionString(),
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// Configure logging based on flags
+			config := logging.GetDefaultConfig()
+
+			// Handle debug flag
+			if debug {
+				config.Level = zap.DebugLevel
+				config.Development = true
+				config.Verbose = true
+			}
+
+			// Handle verbose flag
+			if verbose {
+				config.Verbose = true
+			}
+
+			// Handle log level
+			switch strings.ToLower(logLevel) {
+			case "debug":
+				config.Level = zap.DebugLevel
+				config.Development = true
+				config.Verbose = true
+			case "info":
+				config.Level = zap.InfoLevel
+			case "warn", "warning":
+				config.Level = zap.WarnLevel
+			case "error":
+				config.Level = zap.ErrorLevel
+			default:
+				// Keep default level
+			}
+
+			// Handle log format
+			switch strings.ToLower(logFormat) {
+			case "console":
+				config.Development = true
+			case "json":
+				config.Development = false
+			default:
+				// Keep default format
+			}
+
+			// Reinitialize logger with new config
+			return logging.InitializeLogger(config)
+		},
 	}
+
+	// Add persistent flags for logging configuration
+	cmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Set log level (debug, info, warn, error)")
+	cmd.PersistentFlags().StringVar(&logFormat, "log-format", "json", "Set log format (json, console)")
+	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
+	cmd.PersistentFlags().BoolVar(&debug, "debug", false, "Enable debug logging (overrides log-level)")
 
 	// Add subcommands
 	cmd.AddCommand(
@@ -65,7 +133,6 @@ through a pipeline of JSON-based operations that can be automated or AI-assisted
 
 	return cmd
 }
-
 
 func newDetectCmd() *cobra.Command {
 	var outputFile string
@@ -123,15 +190,35 @@ func newPayloadCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var input commands.DetectResult
 			if err := iojson.ReadInput(inputFile, &input); err != nil {
+				logging.Logger.ErrorSafe("Failed to read conflict input", zap.Error(err))
 				return fmt.Errorf("failed to read input: %w", err)
 			}
 
-			// TODO: Implement payload generation logic
+			// Validate input has conflict data
+			if input.ConflictPayload == nil {
+				logging.Logger.WarnSafe("Input does not contain conflict payload data")
+				return fmt.Errorf("input does not contain conflict payload data")
+			}
+
+			// Convert SimplifiedConflictPayload to PayloadResult format
+			var conflicts []ConflictPayload
+			for _, file := range input.ConflictPayload.Files {
+				for i, conflict := range file.Conflicts {
+					conflictPayload := ConflictPayload{
+						ConflictID: fmt.Sprintf("%s:%d", file.Path, i),
+						Context:    fmt.Sprintf("File: %s (lines %d-%d) [%s]", file.Path, conflict.StartLine, conflict.EndLine, file.Language),
+						Options:    fmt.Sprintf("Ours: %d lines, Theirs: %d lines", len(conflict.OursLines), len(conflict.TheirsLines)),
+					}
+					conflicts = append(conflicts, conflictPayload)
+				}
+			}
+
+			// Create result
 			result := PayloadResult{
-				Conflicts: []ConflictPayload{},
+				Conflicts: conflicts,
 				Metadata: PayloadMetadata{
 					SourceFile: inputFile,
-					Timestamp:  "placeholder",
+					Timestamp:  time.Now().Format(time.RFC3339),
 				},
 			}
 
@@ -171,18 +258,100 @@ func newAIApplyCmd() *cobra.Command {
 		Short: "Apply AI-generated conflict resolutions",
 		Long:  "Processes AI payloads and applies the suggested conflict resolutions to files.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var input PayloadResult
-			if err := iojson.ReadInput(inputFile, &input); err != nil {
+			// Read payload data - could be from payload command output or direct conflict data
+			var payloadData []byte
+			var err error
+
+			if inputFile == "" || inputFile == "-" {
+				payloadData, err = io.ReadAll(os.Stdin)
+			} else {
+				payloadData, err = os.ReadFile(inputFile)
+			}
+			if err != nil {
+				logging.Logger.ErrorSafe("Failed to read AI apply input", zap.Error(err))
 				return fmt.Errorf("failed to read input: %w", err)
 			}
 
-			// TODO: Implement AI resolution application logic
+			// Get current working directory if not specified
+			repoPath, err := os.Getwd()
+			if err != nil {
+				logging.Logger.ErrorSafe("Failed to get current directory", zap.Error(err))
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			// Get API key from environment
+			apiKey := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
+			if apiKey == "" {
+				logging.Logger.ErrorSafe("Claude API key not configured")
+				return fmt.Errorf("CLAUDE_CODE_OAUTH_TOKEN environment variable not set")
+			}
+
+			// Create AI apply options
+			options := commands.AIApplyOptions{
+				RepoPath:       repoPath,
+				OutputFile:     outputFile,
+				DryRun:         false,
+				Verbose:        true,
+				AutoApply:      false,
+				MinConfidence:  0.7,
+				BackupFiles:    true,
+				MaxRetries:     3,
+				TimeoutSeconds: 300,
+			}
+
+			// Create temporary file for payload data
+			tmpFile, err := os.CreateTemp("", "syncwright-payload-*.json")
+			if err != nil {
+				logging.Logger.ErrorSafe("Failed to create temporary file", zap.Error(err))
+				return fmt.Errorf("failed to create temporary file: %w", err)
+			}
+			defer func() {
+				tmpFile.Close()
+				os.Remove(tmpFile.Name())
+			}()
+
+			if _, err := tmpFile.Write(payloadData); err != nil {
+				logging.Logger.ErrorSafe("Failed to write payload data", zap.Error(err))
+				return fmt.Errorf("failed to write payload data: %w", err)
+			}
+			tmpFile.Close()
+
+			options.PayloadFile = tmpFile.Name()
+
+			// Create and execute AI apply command
+			aiCmd, err := commands.NewAIApplyCommand(options)
+			if err != nil {
+				logging.Logger.ErrorSafe("Failed to create AI apply command", zap.Error(err))
+				return fmt.Errorf("failed to create AI apply command: %w", err)
+			}
+
+			aiResult, err := aiCmd.Execute()
+			if err != nil {
+				logging.Logger.ErrorSafe("AI apply command execution failed", zap.Error(err))
+				return fmt.Errorf("AI apply command failed: %w", err)
+			}
+
+			// Convert AIApplyResult to the expected output format
+			var resolutions []ConflictResolution
+			for _, res := range aiResult.Resolutions {
+				resolutions = append(resolutions, ConflictResolution{
+					ConflictID: fmt.Sprintf("%s:%d", res.FilePath, res.StartLine),
+					Resolution: strings.Join(res.ResolvedLines, "\n"),
+					Confidence: res.Confidence,
+				})
+			}
+
+			status := "success"
+			if !aiResult.Success {
+				status = "failed"
+			}
+
 			result := AIApplyResult{
-				Resolutions: []ConflictResolution{},
-				Status:      "pending",
+				Resolutions: resolutions,
+				Status:      status,
 				Metadata: AIApplyMetadata{
 					SourceFile: inputFile,
-					Timestamp:  "placeholder",
+					Timestamp:  time.Now().Format(time.RFC3339),
 				},
 			}
 
@@ -291,12 +460,12 @@ Examples:
 	cmd.Flags().IntVar(&concurrency, "concurrency", 1, "Number of files to format concurrently")
 
 	// Formatter selection
-	cmd.Flags().StringSliceVar(&preferredFormatters, "prefer-formatter", nil, 
+	cmd.Flags().StringSliceVar(&preferredFormatters, "prefer-formatter", nil,
 		"Preferred formatters to use (e.g., goimports,prettier)")
 	cmd.Flags().StringSliceVar(&excludeFormatters, "exclude-formatter", nil, "Formatters to exclude (e.g., gofmt,eslint)")
 
 	// File selection
-	cmd.Flags().StringSliceVar(&includeExtensions, "include-ext", nil, 
+	cmd.Flags().StringSliceVar(&includeExtensions, "include-ext", nil,
 		"Only format files with these extensions (e.g., go,js,py)")
 	cmd.Flags().StringSliceVar(&excludeExtensions, "exclude-ext", nil, "Exclude files with these extensions")
 	cmd.Flags().BoolVar(&scanRecent, "recent", false, "Format only recently modified files")
@@ -358,8 +527,63 @@ func newCommitCmd() *cobra.Command {
 		Short: "Commit resolved changes to Git",
 		Long:  "Creates a Git commit with the resolved conflicts and appropriate commit message.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement commit logic
-			fmt.Println("Commit functionality not yet implemented")
+			// Get current working directory
+			repoPath, err := os.Getwd()
+			if err != nil {
+				logging.Logger.ErrorSafe("Failed to get current directory for commit", zap.Error(err))
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			// Check if we're in a git repository
+			if !gitutils.IsGitRepositoryPath(repoPath) {
+				return fmt.Errorf("not in a git repository")
+			}
+
+			// Check if there are any conflicted files remaining
+			conflictedFiles, err := gitutils.GetConflictedFiles()
+			if err != nil {
+				return fmt.Errorf("failed to check for conflicted files: %w", err)
+			}
+
+			if len(conflictedFiles) > 0 {
+				logging.Logger.WarnSafe("Conflicted files remain before commit",
+					zap.Int("conflicted_files_count", len(conflictedFiles)),
+					zap.Strings("conflicted_files", conflictedFiles))
+				fmt.Printf("Warning: %d conflicted files still remain:\n", len(conflictedFiles))
+				for _, file := range conflictedFiles {
+					fmt.Printf("  - %s\n", file)
+				}
+				fmt.Print("Continue with commit anyway? [y/N]: ")
+				var response string
+				if _, err := fmt.Scanln(&response); err != nil {
+					response = "n"
+				}
+				if strings.ToLower(strings.TrimSpace(response)) != "y" {
+					return fmt.Errorf("commit cancelled due to remaining conflicts")
+				}
+			}
+
+			// Generate commit message
+			commitMessage := "resolve: merge conflicts resolved"
+			if len(conflictedFiles) == 0 {
+				commitMessage = "resolve: all merge conflicts resolved"
+			}
+
+			// Add Claude Code attribution
+			commitMessage += "\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+
+			// Commit the changes
+			logging.Logger.InfoSafe("Committing resolved changes", zap.String("commit_message", strings.Split(commitMessage, "\n")[0]))
+			fmt.Println("Committing resolved changes...")
+			if err := gitutils.CommitChanges(commitMessage); err != nil {
+				logging.Logger.ErrorSafe("Failed to commit changes", zap.Error(err))
+				return fmt.Errorf("failed to commit changes: %w", err)
+			}
+
+			logging.Logger.InfoSafe("Changes committed successfully")
+			fmt.Println("✅ Changes committed successfully")
+			fmt.Printf("Commit message: %s\n", strings.Split(commitMessage, "\n")[0])
+
 			return nil
 		},
 	}
@@ -369,14 +593,14 @@ func newCommitCmd() *cobra.Command {
 
 func newResolveCmd() *cobra.Command {
 	var (
-		maxTokens  int
-		aiMode     bool
-		verbose    bool
-		dryRun     bool
-		confidence float64
-		apiKey     string
-		autoApply  bool
-		skipFormat bool
+		maxTokens    int
+		aiMode       bool
+		verbose      bool
+		dryRun       bool
+		confidence   float64
+		apiKey       string
+		autoApply    bool
+		skipFormat   bool
 		skipValidate bool
 	)
 
@@ -444,16 +668,16 @@ type resolveOptions struct {
 
 // resolveResult represents the complete result of the resolve pipeline
 type resolveResult struct {
-	Success            bool                     `json:"success"`
-	Stage              string                   `json:"stage"`
-	ConflictsDetected  int                      `json:"conflicts_detected"`
-	ConflictsResolved  int                      `json:"conflicts_resolved"`
-	FilesModified      []string                 `json:"files_modified"`
-	AIConfidence       float64                  `json:"ai_confidence,omitempty"`
-	ValidationPassed   bool                     `json:"validation_passed"`
-	FormattingApplied  bool                     `json:"formatting_applied"`
-	ErrorMessage       string                   `json:"error_message,omitempty"`
-	Summary            string                   `json:"summary"`
+	Success           bool     `json:"success"`
+	Stage             string   `json:"stage"`
+	ConflictsDetected int      `json:"conflicts_detected"`
+	ConflictsResolved int      `json:"conflicts_resolved"`
+	FilesModified     []string `json:"files_modified"`
+	AIConfidence      float64  `json:"ai_confidence,omitempty"`
+	ValidationPassed  bool     `json:"validation_passed"`
+	FormattingApplied bool     `json:"formatting_applied"`
+	ErrorMessage      string   `json:"error_message,omitempty"`
+	Summary           string   `json:"summary"`
 }
 
 // executeResolveCommand implements the complete conflict resolution pipeline
@@ -475,7 +699,7 @@ func executeResolveCommand(opts resolveOptions) error {
 	if opts.verbose {
 		fmt.Println("📋 Step 1: Detecting conflicts...")
 	}
-	
+
 	detectResult, err := commands.DetectConflicts(repoPath)
 	if err != nil {
 		result.ErrorMessage = fmt.Sprintf("conflict detection failed: %v", err)
@@ -493,8 +717,8 @@ func executeResolveCommand(opts resolveOptions) error {
 
 	result.ConflictsDetected = len(detectResult.ConflictReport.ConflictedFiles)
 	if opts.verbose {
-		fmt.Printf("📋 Found %d conflicted files with %d total conflicts\n", 
-			len(detectResult.ConflictReport.ConflictedFiles), 
+		fmt.Printf("📋 Found %d conflicted files with %d total conflicts\n",
+			len(detectResult.ConflictReport.ConflictedFiles),
 			detectResult.ConflictReport.TotalConflicts)
 	}
 
@@ -510,7 +734,7 @@ func executeResolveCommand(opts resolveOptions) error {
 	if opts.verbose {
 		fmt.Println("🤖 Step 2: Generating AI resolutions...")
 	}
-	
+
 	result.Stage = "ai_resolution"
 	aiResult, err := resolveWithAI(detectResult, opts, repoPath)
 	if err != nil {
@@ -521,9 +745,9 @@ func executeResolveCommand(opts resolveOptions) error {
 	result.ConflictsResolved = aiResult.AppliedResolutions
 	result.AIConfidence = aiResult.AIResponse.OverallConfidence
 	result.FilesModified = aiResult.ApplicationResult.ModifiedFiles
-	
+
 	if opts.verbose {
-		fmt.Printf("🤖 Applied %d resolutions with overall confidence %.2f\n", 
+		fmt.Printf("🤖 Applied %d resolutions with overall confidence %.2f\n",
 			result.ConflictsResolved, result.AIConfidence)
 	}
 
@@ -538,7 +762,7 @@ func executeResolveCommand(opts resolveOptions) error {
 		if opts.verbose {
 			fmt.Println("🎨 Step 3: Formatting resolved files...")
 		}
-		
+
 		result.Stage = "formatting"
 		formatResult, err := commands.FormatFiles(repoPath, result.FilesModified)
 		if err != nil {
@@ -558,7 +782,7 @@ func executeResolveCommand(opts resolveOptions) error {
 		if opts.verbose {
 			fmt.Println("✅ Step 4: Validating project...")
 		}
-		
+
 		result.Stage = "validation"
 		err = commands.ValidateProject(repoPath, "", 300, opts.verbose)
 		if err != nil {
@@ -578,7 +802,7 @@ func executeResolveCommand(opts resolveOptions) error {
 	result.Success = true
 	result.Stage = "completed"
 	result.Summary = fmt.Sprintf("Successfully resolved %d/%d conflicts", result.ConflictsResolved, result.ConflictsDetected)
-	
+
 	if opts.verbose {
 		fmt.Println("\n🎉 Conflict resolution pipeline completed!")
 		fmt.Printf("   Conflicts resolved: %d/%d\n", result.ConflictsResolved, result.ConflictsDetected)
@@ -611,14 +835,13 @@ func resolveWithAI(detectResult *commands.DetectResult, opts resolveOptions, rep
 
 	// Create AI apply options
 	aiOptions := commands.AIApplyOptions{
-		RepoPath:      repoPath,
-		APIKey:        apiKey,
-		DryRun:        opts.dryRun,
-		Verbose:       opts.verbose,
-		AutoApply:     opts.autoApply,
-		MinConfidence: opts.confidence,
-		BackupFiles:   true,
-		MaxRetries:    3,
+		RepoPath:       repoPath,
+		DryRun:         opts.dryRun,
+		Verbose:        opts.verbose,
+		AutoApply:      opts.autoApply,
+		MinConfidence:  opts.confidence,
+		BackupFiles:    true,
+		MaxRetries:     3,
 		TimeoutSeconds: 120,
 	}
 
@@ -646,7 +869,10 @@ func resolveWithAI(detectResult *commands.DetectResult, opts resolveOptions, rep
 	aiOptions.PayloadFile = tmpFile.Name()
 
 	// Execute AI application
-	aiCmd := commands.NewAIApplyCommand(aiOptions)
+	aiCmd, err := commands.NewAIApplyCommand(aiOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AI apply command: %w", err)
+	}
 	return aiCmd.Execute()
 }
 
@@ -723,15 +949,20 @@ Examples:
 				}
 			}
 
+			// Get current working directory
+			repoPath, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
 			options := commands.BatchOptions{
+				RepoPath:      repoPath,
 				OutputFile:    outputFile,
 				BatchSize:     batchSize,
 				Concurrency:   concurrency,
 				GroupBy:       groupBy,
 				MaxTokens:     maxTokens,
 				TimeoutSec:    timeoutSec,
-				APIKey:        apiKey,
-				APIEndpoint:   apiEndpoint,
 				MinConfidence: minConfidence,
 				AutoApply:     autoApply,
 				DryRun:        dryRun,
@@ -744,14 +975,14 @@ Examples:
 
 			batchCmd := commands.NewBatchCommand(options)
 			result, err := batchCmd.Execute()
-			
+
 			if err != nil {
 				return fmt.Errorf("batch processing failed: %w", err)
 			}
 
 			// Print summary if not already done
 			if !verbose && result.Success {
-				fmt.Printf("✅ Batch processing completed: %d/%d conflicts resolved\n", 
+				fmt.Printf("✅ Batch processing completed: %d/%d conflicts resolved\n",
 					result.AppliedResolutions, result.TotalConflicts)
 			}
 

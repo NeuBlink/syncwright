@@ -15,27 +15,27 @@ func validateFilePath(filePath string) error {
 	if filePath == "" || filePath == "-" {
 		return nil // stdin/stdout are allowed
 	}
-	
+
 	// Clean the path to resolve . and .. components
 	cleanPath := filepath.Clean(filePath)
-	
+
 	// Check for path traversal attempts
 	if strings.Contains(cleanPath, "..") {
 		return fmt.Errorf("path traversal detected in: %s", filePath)
 	}
-	
+
 	// Check for absolute paths that go outside expected boundaries
 	if filepath.IsAbs(cleanPath) {
 		// Allow absolute paths but log them for security review
 		// In production, you might want to restrict this further
 		fmt.Fprintf(os.Stderr, "Info: using absolute path: %s\n", cleanPath)
 	}
-	
+
 	// Check for potentially dangerous characters
 	if strings.ContainsAny(cleanPath, ";|&`$") {
 		return fmt.Errorf("potentially dangerous characters in path: %s", filePath)
 	}
-	
+
 	return nil
 }
 

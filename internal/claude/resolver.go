@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/NeuBlink/syncwright/internal/gitutils"
+	"github.com/NeuBlink/syncwright/internal/logging"
 	"github.com/NeuBlink/syncwright/internal/payload"
+	"go.uber.org/zap"
 )
 
 // ConflictResolver handles conflict resolution using Claude Code CLI
@@ -36,23 +38,23 @@ type ConflictResolverConfig struct {
 	MaxBatchSize       int
 	IncludeReasoning   bool
 	Verbose            bool
-	EnableMultiTurn    bool  // Enable multi-turn conversations for low-confidence conflicts
-	MaxTurns           int   // Maximum number of conversation turns
+	EnableMultiTurn    bool    // Enable multi-turn conversations for low-confidence conflicts
+	MaxTurns           int     // Maximum number of conversation turns
 	MultiTurnThreshold float64 // Confidence threshold below which to use multi-turn
 }
 
 // ResolverResult contains the results of conflict resolution
 type ResolverResult struct {
-	Success           bool                          `json:"success"`
-	ProcessedFiles    int                           `json:"processed_files"`
-	ProcessedConflicts int                          `json:"processed_conflicts"`
-	Resolutions       []gitutils.ConflictResolution `json:"resolutions"`
-	HighConfidence    []gitutils.ConflictResolution `json:"high_confidence"`
-	LowConfidence     []gitutils.ConflictResolution `json:"low_confidence"`
-	OverallConfidence float64                       `json:"overall_confidence"`
-	ProcessingTime    time.Duration                 `json:"processing_time"`
-	ErrorMessage      string                        `json:"error_message,omitempty"`
-	Warnings          []string                      `json:"warnings,omitempty"`
+	Success            bool                          `json:"success"`
+	ProcessedFiles     int                           `json:"processed_files"`
+	ProcessedConflicts int                           `json:"processed_conflicts"`
+	Resolutions        []gitutils.ConflictResolution `json:"resolutions"`
+	HighConfidence     []gitutils.ConflictResolution `json:"high_confidence"`
+	LowConfidence      []gitutils.ConflictResolution `json:"low_confidence"`
+	OverallConfidence  float64                       `json:"overall_confidence"`
+	ProcessingTime     time.Duration                 `json:"processing_time"`
+	ErrorMessage       string                        `json:"error_message,omitempty"`
+	Warnings           []string                      `json:"warnings,omitempty"`
 }
 
 // NewConflictResolver creates a new conflict resolver
@@ -78,7 +80,7 @@ func NewConflictResolver(config *ConflictResolverConfig) (*ConflictResolver, err
 	if config.MaxBatchSize <= 0 {
 		config.MaxBatchSize = 10
 	}
-	
+
 	// Set multi-turn defaults
 	if config.MaxTurns <= 0 {
 		config.MaxTurns = 3
@@ -124,6 +126,9 @@ func (r *ConflictResolver) ResolveConflicts(ctx context.Context, conflictPayload
 	}
 	result.ProcessedConflicts = totalConflicts
 
+	logging.Logger.ConflictResolution("conflict_resolution_started",
+		zap.Int("total_conflicts", totalConflicts),
+		zap.Int("total_files", len(conflictPayload.Files)))
 	if r.verbose {
 		fmt.Printf("Resolving %d conflicts across %d files\n", totalConflicts, len(conflictPayload.Files))
 	}
@@ -136,6 +141,10 @@ func (r *ConflictResolver) ResolveConflicts(ctx context.Context, conflictPayload
 	resolutionCount := 0
 
 	for i, batch := range batches {
+		logging.Logger.ConflictResolution("batch_processing",
+			zap.Int("batch_number", i+1),
+			zap.Int("total_batches", len(batches)),
+			zap.Int("files_in_batch", len(batch)))
 		if r.verbose {
 			fmt.Printf("Processing batch %d/%d (%d files)\n", i+1, len(batches), len(batch))
 		}
@@ -184,7 +193,7 @@ func (r *ConflictResolver) ResolveConflicts(ctx context.Context, conflictPayload
 // createBatches splits files into batches for processing
 func (r *ConflictResolver) createBatches(files []payload.ConflictFilePayload) [][]payload.ConflictFilePayload {
 	var batches [][]payload.ConflictFilePayload
-	
+
 	for i := 0; i < len(files); i += r.maxBatchSize {
 		end := i + r.maxBatchSize
 		if end > len(files) {
@@ -192,7 +201,7 @@ func (r *ConflictResolver) createBatches(files []payload.ConflictFilePayload) []
 		}
 		batches = append(batches, files[i:end])
 	}
-	
+
 	return batches
 }
 
@@ -200,7 +209,7 @@ func (r *ConflictResolver) createBatches(files []payload.ConflictFilePayload) []
 func (r *ConflictResolver) processBatch(ctx context.Context, files []payload.ConflictFilePayload, repoPath string) ([]gitutils.ConflictResolution, error) {
 	// Build the prompt for Claude
 	prompt := r.buildConflictResolutionPrompt(files, repoPath)
-	
+
 	// Create context data
 	contextData := map[string]interface{}{
 		"repo_path":      repoPath,
@@ -208,26 +217,26 @@ func (r *ConflictResolver) processBatch(ctx context.Context, files []payload.Con
 		"files":          r.getFilePathsFromBatch(files),
 		"batch_size":     len(files),
 	}
-	
+
 	// Execute the command
 	response, err := r.client.ExecuteConflictResolution(ctx, prompt, contextData)
 	if err != nil {
 		return nil, fmt.Errorf("Claude execution failed: %w", err)
 	}
-	
+
 	if !response.Success {
 		return nil, fmt.Errorf("Claude reported failure: %s", response.ErrorMessage)
 	}
-	
+
 	// Parse resolutions from Claude's response
 	resolutions, err := r.parseResolutionsFromResponse(response, files)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse resolutions: %w", err)
 	}
-	
+
 	// Apply Go-specific confidence validation and adjustment
 	resolutions = r.adjustConfidenceWithGoValidation(resolutions, files)
-	
+
 	// Apply multi-turn conversation for low-confidence resolutions
 	if r.enableMultiTurn {
 		resolutions, err = r.applyMultiTurnRefinement(ctx, resolutions, files, repoPath)
@@ -235,20 +244,20 @@ func (r *ConflictResolver) processBatch(ctx context.Context, files []payload.Con
 			return nil, fmt.Errorf("multi-turn refinement failed: %w", err)
 		}
 	}
-	
+
 	return resolutions, nil
 }
 
 // buildConflictResolutionPrompt builds a prompt for Claude to resolve conflicts
 func (r *ConflictResolver) buildConflictResolutionPrompt(files []payload.ConflictFilePayload, repoPath string) string {
 	var prompt strings.Builder
-	
+
 	// Enhanced prompt with Go-specific guidance
 	prompt.WriteString("I need help resolving merge conflicts in a Go codebase. ")
 	prompt.WriteString("As an expert Go developer and AI conflict resolution specialist, ")
 	prompt.WriteString("please analyze these conflicts with deep understanding of Go semantics, ")
 	prompt.WriteString("function signatures, import management, and idiomatic patterns.\n\n")
-	
+
 	prompt.WriteString("**CONFLICT RESOLUTION EXPERTISE REQUIRED:**\n")
 	prompt.WriteString("- Go function signatures and method receivers\n")
 	prompt.WriteString("- Import statement management and aliasing\n")
@@ -257,11 +266,11 @@ func (r *ConflictResolver) buildConflictResolutionPrompt(files []payload.Conflic
 	prompt.WriteString("- Error handling patterns and idiomatic Go code\n")
 	prompt.WriteString("- Struct definitions and field ordering\n")
 	prompt.WriteString("- Goroutine and channel usage patterns\n\n")
-	
+
 	if r.includeReasoning {
 		prompt.WriteString("Provide detailed reasoning explaining your resolution decisions. ")
 	}
-	
+
 	prompt.WriteString("For each conflict, provide:\n")
 	prompt.WriteString("1. The file path\n")
 	prompt.WriteString("2. Start and end line numbers\n")
@@ -271,7 +280,7 @@ func (r *ConflictResolver) buildConflictResolutionPrompt(files []payload.Conflic
 	prompt.WriteString("   - Function signature compatibility\n")
 	prompt.WriteString("   - Import statement consistency\n")
 	prompt.WriteString("   - Type safety and interface satisfaction\n")
-	
+
 	if r.includeReasoning {
 		prompt.WriteString("5. Detailed reasoning including:\n")
 		prompt.WriteString("   - Why this resolution preserves Go semantics\n")
@@ -279,30 +288,30 @@ func (r *ConflictResolver) buildConflictResolutionPrompt(files []payload.Conflic
 		prompt.WriteString("   - Import management decisions\n")
 		prompt.WriteString("   - Any potential compatibility concerns\n")
 	}
-	
+
 	prompt.WriteString("\n**CONFIDENCE SCORING GUIDELINES:**\n")
 	prompt.WriteString("- 0.9-1.0: Confident resolution, clear semantic intent, perfect Go idioms\n")
 	prompt.WriteString("- 0.7-0.9: Good resolution, minor ambiguity, mostly idiomatic\n")
 	prompt.WriteString("- 0.5-0.7: Reasonable resolution, some uncertainty, basic correctness\n")
 	prompt.WriteString("- 0.3-0.5: Uncertain resolution, significant ambiguity, may need review\n")
 	prompt.WriteString("- 0.0-0.3: Low confidence, complex conflict, recommend manual review\n\n")
-	
+
 	prompt.WriteString("Here are the conflicts to resolve:\n\n")
-	
+
 	// Add conflict details
 	for _, file := range files {
 		prompt.WriteString(fmt.Sprintf("File: %s\n", file.Path))
 		prompt.WriteString("Conflicts:\n")
-		
+
 		for i, conflict := range file.Conflicts {
 			prompt.WriteString(fmt.Sprintf("\nConflict %d (lines %d-%d):\n", i+1, conflict.StartLine, conflict.EndLine))
-			
+
 			// Show "ours" section
 			prompt.WriteString("<<<<<<< HEAD\n")
 			for _, line := range conflict.OursLines {
 				prompt.WriteString(line + "\n")
 			}
-			
+
 			// Show base section if available
 			if len(conflict.BaseLines) > 0 {
 				prompt.WriteString("||||||| base\n")
@@ -310,17 +319,17 @@ func (r *ConflictResolver) buildConflictResolutionPrompt(files []payload.Conflic
 					prompt.WriteString(line + "\n")
 				}
 			}
-			
+
 			// Show separator
 			prompt.WriteString("=======\n")
-			
+
 			// Show "theirs" section
 			for _, line := range conflict.TheirsLines {
 				prompt.WriteString(line + "\n")
 			}
 			prompt.WriteString(">>>>>>> branch\n")
 		}
-		
+
 		// Add enhanced Go-specific context
 		goContext := r.extractGoContext(file, repoPath)
 		if goContext != "" {
@@ -328,7 +337,7 @@ func (r *ConflictResolver) buildConflictResolutionPrompt(files []payload.Conflic
 			prompt.WriteString(goContext)
 			prompt.WriteString("\n")
 		}
-		
+
 		// Add basic file context if available
 		if len(file.Context.BeforeLines) > 0 || len(file.Context.AfterLines) > 0 {
 			prompt.WriteString("\nSurrounding context:\n")
@@ -345,10 +354,10 @@ func (r *ConflictResolver) buildConflictResolutionPrompt(files []payload.Conflic
 				}
 			}
 		}
-		
+
 		prompt.WriteString("\n---\n\n")
 	}
-	
+
 	prompt.WriteString("**RESPONSE FORMAT:**\n")
 	prompt.WriteString("Provide resolutions in JSON format. Ensure all resolved Go code is syntactically correct and follows Go idioms:\n\n")
 	prompt.WriteString("{\n")
@@ -359,16 +368,16 @@ func (r *ConflictResolver) buildConflictResolutionPrompt(files []payload.Conflic
 	prompt.WriteString("      \"end_line\": 15,\n")
 	prompt.WriteString("      \"resolved_lines\": [\"// Resolved Go code here\", \"func example() error {\", \"  return nil\", \"}\"],\n")
 	prompt.WriteString("      \"confidence\": 0.85")
-	
+
 	if r.includeReasoning {
 		prompt.WriteString(",\n      \"reasoning\": \"Merged function signatures by preserving both parameter types and ensuring interface compatibility. Maintained idiomatic error handling pattern.\"")
 	}
-	
+
 	prompt.WriteString(",\n      \"go_specific_notes\": \"Additional Go-specific observations about imports, types, or semantics\"")
 	prompt.WriteString("\n    }\n")
 	prompt.WriteString("  ]\n")
 	prompt.WriteString("}")
-	
+
 	return prompt.String()
 }
 
@@ -396,7 +405,7 @@ func (r *ConflictResolver) parseResolutionsFromResponse(response *ClaudeResponse
 	if resolutions, err := r.parseJSONResolutions(response.Content); err == nil {
 		return resolutions, nil
 	}
-	
+
 	// If JSON parsing fails, try to extract from text
 	return r.parseTextResolutions(response.Content, files)
 }
@@ -406,30 +415,30 @@ func (r *ConflictResolver) parseJSONResolutions(content string) ([]gitutils.Conf
 	// Look for JSON in the content
 	jsonStart := strings.Index(content, "{")
 	jsonEnd := strings.LastIndex(content, "}")
-	
+
 	if jsonStart == -1 || jsonEnd == -1 || jsonStart >= jsonEnd {
 		return nil, fmt.Errorf("no valid JSON found in response")
 	}
-	
+
 	jsonContent := content[jsonStart : jsonEnd+1]
-	
+
 	// Enhanced response structure to handle Go-specific fields
 	var response struct {
 		Resolutions []struct {
-			FilePath      string   `json:"file_path"`
-			StartLine     int      `json:"start_line"`
-			EndLine       int      `json:"end_line"`
-			ResolvedLines []string `json:"resolved_lines"`
-			Confidence    float64  `json:"confidence"`
-			Reasoning     string   `json:"reasoning,omitempty"`
-			GoSpecificNotes string `json:"go_specific_notes,omitempty"`
+			FilePath        string   `json:"file_path"`
+			StartLine       int      `json:"start_line"`
+			EndLine         int      `json:"end_line"`
+			ResolvedLines   []string `json:"resolved_lines"`
+			Confidence      float64  `json:"confidence"`
+			Reasoning       string   `json:"reasoning,omitempty"`
+			GoSpecificNotes string   `json:"go_specific_notes,omitempty"`
 		} `json:"resolutions"`
 	}
-	
+
 	if err := json.Unmarshal([]byte(jsonContent), &response); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
-	
+
 	// Convert to standard resolution format and apply semantic validation
 	var resolutions []gitutils.ConflictResolution
 	for _, res := range response.Resolutions {
@@ -441,7 +450,7 @@ func (r *ConflictResolver) parseJSONResolutions(content string) ([]gitutils.Conf
 			Confidence:    res.Confidence,
 			Reasoning:     res.Reasoning,
 		}
-		
+
 		// Append Go-specific notes to reasoning if available
 		if res.GoSpecificNotes != "" {
 			if resolution.Reasoning != "" {
@@ -450,7 +459,7 @@ func (r *ConflictResolver) parseJSONResolutions(content string) ([]gitutils.Conf
 				resolution.Reasoning = "Go-specific: " + res.GoSpecificNotes
 			}
 		}
-		
+
 		// Apply semantic validation if this is a Go file
 		if r.isGoFile(resolution.FilePath) {
 			if err := r.validateSemanticCorrectness(resolution); err != nil {
@@ -461,26 +470,26 @@ func (r *ConflictResolver) parseJSONResolutions(content string) ([]gitutils.Conf
 				resolution.Confidence *= 0.8
 			}
 		}
-		
+
 		resolutions = append(resolutions, resolution)
 	}
-	
+
 	return resolutions, nil
 }
 
 // parseTextResolutions extracts resolutions from text format
 func (r *ConflictResolver) parseTextResolutions(content string, files []payload.ConflictFilePayload) ([]gitutils.ConflictResolution, error) {
 	var resolutions []gitutils.ConflictResolution
-	
+
 	// Use regex patterns to extract resolution information
 	lines := strings.Split(content, "\n")
-	
+
 	var currentResolution *gitutils.ConflictResolution
 	var collectingLines bool
-	
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		
+
 		// Look for file path indicators
 		if fileMatch := regexp.MustCompile(`(?i)file:?\s*(.+)`).FindStringSubmatch(line); fileMatch != nil {
 			if currentResolution != nil {
@@ -492,7 +501,7 @@ func (r *ConflictResolver) parseTextResolutions(content string, files []payload.
 			}
 			collectingLines = false
 		}
-		
+
 		// Look for line range indicators
 		if currentResolution != nil && !collectingLines {
 			if rangeMatch := regexp.MustCompile(`(?i)lines?\s*(\d+)-(\d+)`).FindStringSubmatch(line); rangeMatch != nil {
@@ -504,7 +513,7 @@ func (r *ConflictResolver) parseTextResolutions(content string, files []payload.
 				}
 			}
 		}
-		
+
 		// Look for confidence indicators
 		if currentResolution != nil {
 			if confMatch := regexp.MustCompile(`(?i)confidence:?\s*([0-9.]+)`).FindStringSubmatch(line); confMatch != nil {
@@ -513,14 +522,14 @@ func (r *ConflictResolver) parseTextResolutions(content string, files []payload.
 				}
 			}
 		}
-		
+
 		// Look for reasoning
 		if currentResolution != nil && r.includeReasoning {
 			if reasonMatch := regexp.MustCompile(`(?i)reasoning:?\s*(.+)`).FindStringSubmatch(line); reasonMatch != nil {
 				currentResolution.Reasoning = strings.TrimSpace(reasonMatch[1])
 			}
 		}
-		
+
 		// Look for resolution content
 		if currentResolution != nil && !collectingLines {
 			if strings.Contains(strings.ToLower(line), "resolution") || strings.Contains(strings.ToLower(line), "resolved") {
@@ -528,22 +537,22 @@ func (r *ConflictResolver) parseTextResolutions(content string, files []payload.
 				continue
 			}
 		}
-		
+
 		// Collect resolution lines
 		if currentResolution != nil && collectingLines && line != "" {
 			// Skip obvious non-content lines
-			if !strings.Contains(line, "---") && !strings.Contains(line, "===") && 
-			   !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "//") {
+			if !strings.Contains(line, "---") && !strings.Contains(line, "===") &&
+				!strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "//") {
 				currentResolution.ResolvedLines = append(currentResolution.ResolvedLines, line)
 			}
 		}
 	}
-	
+
 	// Add the last resolution
 	if currentResolution != nil {
 		resolutions = append(resolutions, *currentResolution)
 	}
-	
+
 	// Validate and clean up resolutions
 	var validResolutions []gitutils.ConflictResolution
 	for _, resolution := range resolutions {
@@ -551,11 +560,11 @@ func (r *ConflictResolver) parseTextResolutions(content string, files []payload.
 			validResolutions = append(validResolutions, resolution)
 		}
 	}
-	
+
 	if len(validResolutions) == 0 {
 		return nil, fmt.Errorf("no valid resolutions found in response")
 	}
-	
+
 	return validResolutions, nil
 }
 
@@ -566,21 +575,21 @@ func (r *ConflictResolver) ResolveConflictsByFiles(ctx context.Context, filePath
 	if err != nil {
 		return nil, fmt.Errorf("failed to build payload from files: %w", err)
 	}
-	
+
 	return r.ResolveConflicts(ctx, conflictPayload)
 }
 
 // buildPayloadFromFiles builds a conflict payload from file paths
 func (r *ConflictResolver) buildPayloadFromFiles(filePaths []string) (*payload.ConflictPayload, error) {
 	var files []payload.ConflictFilePayload
-	
+
 	for _, filePath := range filePaths {
 		// Parse conflicts from the file
 		hunks, err := gitutils.ParseConflictHunks(filePath, r.repoPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse conflicts in %s: %w", filePath, err)
 		}
-		
+
 		// Convert hunks to conflict payloads
 		var conflicts []payload.ConflictHunkPayload
 		for i, hunk := range hunks {
@@ -593,13 +602,13 @@ func (r *ConflictResolver) buildPayloadFromFiles(filePaths []string) (*payload.C
 				BaseLines:   hunk.BaseLines,
 			})
 		}
-		
+
 		// Get file context
 		contextLines, err := gitutils.ExtractFileContext(filePath, r.repoPath, 10)
 		if err != nil {
 			contextLines = nil // Continue without context
 		}
-		
+
 		// Build file context
 		fileContext := payload.FileContext{}
 		if len(contextLines) > 10 {
@@ -608,14 +617,14 @@ func (r *ConflictResolver) buildPayloadFromFiles(filePaths []string) (*payload.C
 		} else {
 			fileContext.BeforeLines = contextLines
 		}
-		
+
 		files = append(files, payload.ConflictFilePayload{
 			Path:      filePath,
 			Conflicts: conflicts,
 			Context:   fileContext,
 		})
 	}
-	
+
 	return &payload.ConflictPayload{
 		Metadata: payload.PayloadMetadata{
 			RepoPath: r.repoPath,
@@ -629,29 +638,29 @@ func (r *ConflictResolver) extractGoContext(file payload.ConflictFilePayload, re
 	if file.Language != "go" {
 		return ""
 	}
-	
+
 	var context strings.Builder
-	
+
 	// Extract package information
 	if packageInfo := r.extractPackageInfo(file, repoPath); packageInfo != "" {
 		context.WriteString("Package: " + packageInfo + "\n")
 	}
-	
+
 	// Extract import statements
 	if imports := r.extractImportStatements(file, repoPath); len(imports) > 0 {
 		context.WriteString("Imports: " + strings.Join(imports, ", ") + "\n")
 	}
-	
+
 	// Extract function signatures in conflict regions
 	if functions := r.extractFunctionSignatures(file); len(functions) > 0 {
 		context.WriteString("Function signatures involved: " + strings.Join(functions, "; ") + "\n")
 	}
-	
+
 	// Extract struct/interface definitions
 	if types := r.extractTypeDefinitions(file); len(types) > 0 {
 		context.WriteString("Type definitions: " + strings.Join(types, "; ") + "\n")
 	}
-	
+
 	return context.String()
 }
 
@@ -663,7 +672,7 @@ func (r *ConflictResolver) extractPackageInfo(file payload.ConflictFilePayload, 
 	if err != nil {
 		return ""
 	}
-	
+
 	lines := strings.Split(string(content), "\n")
 	for _, line := range lines[:min(10, len(lines))] {
 		line = strings.TrimSpace(line)
@@ -681,37 +690,37 @@ func (r *ConflictResolver) extractImportStatements(file payload.ConflictFilePayl
 	if err != nil {
 		return nil
 	}
-	
+
 	var imports []string
 	lines := strings.Split(string(content), "\n")
 	inImportBlock := false
-	
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		
+
 		// Single import
 		if strings.HasPrefix(line, "import \"") {
 			imports = append(imports, line)
 		}
-		
+
 		// Import block start
 		if strings.HasPrefix(line, "import (") {
 			inImportBlock = true
 			continue
 		}
-		
+
 		// Import block end
 		if inImportBlock && strings.HasPrefix(line, ")") {
 			inImportBlock = false
 			continue
 		}
-		
+
 		// Import block content
 		if inImportBlock && line != "" && !strings.HasPrefix(line, "//") {
 			imports = append(imports, "\t"+line)
 		}
 	}
-	
+
 	return imports
 }
 
@@ -719,7 +728,7 @@ func (r *ConflictResolver) extractImportStatements(file payload.ConflictFilePayl
 func (r *ConflictResolver) extractFunctionSignatures(file payload.ConflictFilePayload) []string {
 	var signatures []string
 	funcRegex := regexp.MustCompile(`^\s*func\s+(\w*\s*)?\w+\s*\([^)]*\).*$`)
-	
+
 	for _, conflict := range file.Conflicts {
 		// Check both sides of the conflict
 		allLines := append(conflict.OursLines, conflict.TheirsLines...)
@@ -729,7 +738,7 @@ func (r *ConflictResolver) extractFunctionSignatures(file payload.ConflictFilePa
 			}
 		}
 	}
-	
+
 	return signatures
 }
 
@@ -737,7 +746,7 @@ func (r *ConflictResolver) extractFunctionSignatures(file payload.ConflictFilePa
 func (r *ConflictResolver) extractTypeDefinitions(file payload.ConflictFilePayload) []string {
 	var types []string
 	typeRegex := regexp.MustCompile(`^\s*type\s+\w+\s+(struct|interface).*$`)
-	
+
 	for _, conflict := range file.Conflicts {
 		allLines := append(conflict.OursLines, conflict.TheirsLines...)
 		for _, line := range allLines {
@@ -746,7 +755,7 @@ func (r *ConflictResolver) extractTypeDefinitions(file payload.ConflictFilePaylo
 			}
 		}
 	}
-	
+
 	return types
 }
 
@@ -766,18 +775,18 @@ func (r *ConflictResolver) IsAvailable() bool {
 // applyMultiTurnRefinement uses multi-turn conversations to improve low-confidence resolutions
 func (r *ConflictResolver) applyMultiTurnRefinement(ctx context.Context, resolutions []gitutils.ConflictResolution, files []payload.ConflictFilePayload, repoPath string) ([]gitutils.ConflictResolution, error) {
 	var refinedResolutions []gitutils.ConflictResolution
-	
+
 	for _, resolution := range resolutions {
 		if resolution.Confidence >= r.multiTurnThreshold {
 			// High confidence, no refinement needed
 			refinedResolutions = append(refinedResolutions, resolution)
 			continue
 		}
-		
+
 		if r.verbose {
 			fmt.Printf("Applying multi-turn refinement for low-confidence resolution (%.2f) in %s\n", resolution.Confidence, resolution.FilePath)
 		}
-		
+
 		// Apply multi-turn conversation to improve the resolution
 		refinedResolution, err := r.refineResolutionWithMultiTurn(ctx, resolution, files, repoPath)
 		if err != nil {
@@ -790,7 +799,7 @@ func (r *ConflictResolver) applyMultiTurnRefinement(ctx context.Context, resolut
 			refinedResolutions = append(refinedResolutions, refinedResolution)
 		}
 	}
-	
+
 	return refinedResolutions, nil
 }
 
@@ -804,28 +813,28 @@ func (r *ConflictResolver) refineResolutionWithMultiTurn(ctx context.Context, re
 			break
 		}
 	}
-	
+
 	if targetFile == nil {
 		return resolution, fmt.Errorf("could not find file %s for multi-turn refinement", resolution.FilePath)
 	}
-	
+
 	// Start a session for multi-turn conversation
 	sessionID, err := r.client.StartSession(ctx)
 	if err != nil {
 		return resolution, fmt.Errorf("failed to start session: %w", err)
 	}
 	defer r.client.EndSession(ctx)
-	
+
 	currentResolution := resolution
-	
+
 	for turn := 1; turn <= r.maxTurns; turn++ {
 		if r.verbose {
 			fmt.Printf("Multi-turn refinement: Turn %d/%d for %s\n", turn, r.maxTurns, resolution.FilePath)
 		}
-		
+
 		// Build refinement prompt based on current resolution and context
 		refinementPrompt := r.buildRefinementPrompt(currentResolution, *targetFile, turn)
-		
+
 		// Execute refinement
 		command := &ClaudeCommand{
 			Prompt:    refinementPrompt,
@@ -835,16 +844,16 @@ func (r *ConflictResolver) refineResolutionWithMultiTurn(ctx context.Context, re
 				"turn":      fmt.Sprintf("%d", turn),
 			},
 		}
-		
+
 		response, err := r.client.ExecuteCommand(ctx, command)
 		if err != nil {
 			return currentResolution, fmt.Errorf("refinement turn %d failed: %w", turn, err)
 		}
-		
+
 		if !response.Success {
 			return currentResolution, fmt.Errorf("refinement turn %d unsuccessful: %s", turn, response.ErrorMessage)
 		}
-		
+
 		// Parse the refined resolution
 		refinedResolutions, err := r.parseResolutionsFromResponse(response, []payload.ConflictFilePayload{*targetFile})
 		if err != nil || len(refinedResolutions) == 0 {
@@ -853,16 +862,16 @@ func (r *ConflictResolver) refineResolutionWithMultiTurn(ctx context.Context, re
 			}
 			break
 		}
-		
+
 		refinedResolution := refinedResolutions[0]
-		
+
 		// Check if confidence improved significantly
 		if refinedResolution.Confidence > currentResolution.Confidence {
 			if r.verbose {
 				fmt.Printf("Confidence improved from %.2f to %.2f in turn %d\n", currentResolution.Confidence, refinedResolution.Confidence, turn)
 			}
 			currentResolution = refinedResolution
-			
+
 			// Stop if we've reached good confidence
 			if currentResolution.Confidence >= r.minConfidence {
 				break
@@ -875,14 +884,14 @@ func (r *ConflictResolver) refineResolutionWithMultiTurn(ctx context.Context, re
 			break
 		}
 	}
-	
+
 	return currentResolution, nil
 }
 
 // adjustConfidenceWithGoValidation applies Go-specific validation to adjust confidence scores
 func (r *ConflictResolver) adjustConfidenceWithGoValidation(resolutions []gitutils.ConflictResolution, files []payload.ConflictFilePayload) []gitutils.ConflictResolution {
 	var adjustedResolutions []gitutils.ConflictResolution
-	
+
 	for _, resolution := range resolutions {
 		// Find the corresponding file
 		var targetFile *payload.ConflictFilePayload
@@ -892,28 +901,28 @@ func (r *ConflictResolver) adjustConfidenceWithGoValidation(resolutions []gituti
 				break
 			}
 		}
-		
+
 		// Skip non-Go files or if file not found
 		if targetFile == nil {
 			adjustedResolutions = append(adjustedResolutions, resolution)
 			continue
 		}
-		
+
 		// Apply Go-specific validation
 		adjustedConfidence := r.validateGoResolution(resolution, *targetFile)
-		
+
 		// Create adjusted resolution
 		adjustedResolution := resolution
 		adjustedResolution.Confidence = adjustedConfidence
-		
+
 		if r.verbose && adjustedConfidence != resolution.Confidence {
-			fmt.Printf("Adjusted confidence for %s from %.2f to %.2f based on Go validation\n", 
+			fmt.Printf("Adjusted confidence for %s from %.2f to %.2f based on Go validation\n",
 				resolution.FilePath, resolution.Confidence, adjustedConfidence)
 		}
-		
+
 		adjustedResolutions = append(adjustedResolutions, adjustedResolution)
 	}
-	
+
 	return adjustedResolutions
 }
 
@@ -921,7 +930,7 @@ func (r *ConflictResolver) adjustConfidenceWithGoValidation(resolutions []gituti
 func (r *ConflictResolver) validateGoResolution(resolution gitutils.ConflictResolution, file payload.ConflictFilePayload) float64 {
 	originalConfidence := resolution.Confidence
 	confidenceMultiplier := 1.0
-	
+
 	// Check syntax validity
 	if !r.isValidGoSyntax(resolution.ResolvedLines) {
 		confidenceMultiplier *= 0.3 // Heavily penalize invalid syntax
@@ -929,7 +938,7 @@ func (r *ConflictResolver) validateGoResolution(resolution gitutils.ConflictReso
 			fmt.Printf("Invalid Go syntax detected in resolution for %s\n", resolution.FilePath)
 		}
 	}
-	
+
 	// Check function signature consistency
 	if !r.validateFunctionSignatures(resolution.ResolvedLines, file) {
 		confidenceMultiplier *= 0.7 // Moderately penalize inconsistent signatures
@@ -937,7 +946,7 @@ func (r *ConflictResolver) validateGoResolution(resolution gitutils.ConflictReso
 			fmt.Printf("Function signature inconsistency detected in %s\n", resolution.FilePath)
 		}
 	}
-	
+
 	// Check import statement validity
 	if !r.validateImportStatements(resolution.ResolvedLines) {
 		confidenceMultiplier *= 0.8 // Slightly penalize import issues
@@ -945,12 +954,12 @@ func (r *ConflictResolver) validateGoResolution(resolution gitutils.ConflictReso
 			fmt.Printf("Import statement issues detected in %s\n", resolution.FilePath)
 		}
 	}
-	
+
 	// Check for common Go idioms and patterns
 	if r.followsGoIdioms(resolution.ResolvedLines) {
 		confidenceMultiplier *= 1.1 // Bonus for following Go idioms
 	}
-	
+
 	// Ensure confidence doesn't exceed 1.0
 	adjustedConfidence := originalConfidence * confidenceMultiplier
 	if adjustedConfidence > 1.0 {
@@ -959,19 +968,19 @@ func (r *ConflictResolver) validateGoResolution(resolution gitutils.ConflictReso
 	if adjustedConfidence < 0.0 {
 		adjustedConfidence = 0.0
 	}
-	
+
 	return adjustedConfidence
 }
 
 // isValidGoSyntax performs basic syntax validation on Go code lines
 func (r *ConflictResolver) isValidGoSyntax(lines []string) bool {
 	codeContent := strings.Join(lines, "\n")
-	
+
 	// Check for basic syntax issues
 	braceCount := 0
 	parenCount := 0
 	bracketCount := 0
-	
+
 	for _, char := range codeContent {
 		switch char {
 		case '{':
@@ -988,21 +997,21 @@ func (r *ConflictResolver) isValidGoSyntax(lines []string) bool {
 			bracketCount--
 		}
 	}
-	
+
 	// Check for balanced braces, parentheses, and brackets
 	if braceCount != 0 || parenCount != 0 || bracketCount != 0 {
 		return false
 	}
-	
+
 	// Check for obvious syntax errors
 	invalidPatterns := []string{
-		"func (", // Incomplete function declaration
-		"if {", // Empty if condition
-		"for {", // Empty for condition (actually valid in Go, but suspicious)
-		";;", // Double semicolon
+		"func (",   // Incomplete function declaration
+		"if {",     // Empty if condition
+		"for {",    // Empty for condition (actually valid in Go, but suspicious)
+		";;",       // Double semicolon
 		"import (", // Incomplete import block
 	}
-	
+
 	for _, pattern := range invalidPatterns {
 		if strings.Contains(codeContent, pattern) {
 			// Additional validation needed for some patterns
@@ -1013,14 +1022,14 @@ func (r *ConflictResolver) isValidGoSyntax(lines []string) bool {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
 // validateFunctionSignatures checks if function signatures are consistent
 func (r *ConflictResolver) validateFunctionSignatures(resolvedLines []string, file payload.ConflictFilePayload) bool {
 	funcRegex := regexp.MustCompile(`^\s*func\s+(\w*\s*)?\w+\s*\([^)]*\).*$`)
-	
+
 	// Extract function signatures from resolved content
 	resolvedFunctions := make([]string, 0)
 	for _, line := range resolvedLines {
@@ -1028,12 +1037,12 @@ func (r *ConflictResolver) validateFunctionSignatures(resolvedLines []string, fi
 			resolvedFunctions = append(resolvedFunctions, strings.TrimSpace(line))
 		}
 	}
-	
+
 	// If no functions in resolution, consider it valid
 	if len(resolvedFunctions) == 0 {
 		return true
 	}
-	
+
 	// Check for duplicate function names (which could indicate merge issues)
 	functionNames := make(map[string]int)
 	for _, funcSig := range resolvedFunctions {
@@ -1054,7 +1063,7 @@ func (r *ConflictResolver) validateFunctionSignatures(resolvedLines []string, fi
 					break
 				}
 			}
-			
+
 			if funcName != "" {
 				// Remove parameter list from name
 				if idx := strings.Index(funcName, "("); idx != -1 {
@@ -1064,7 +1073,7 @@ func (r *ConflictResolver) validateFunctionSignatures(resolvedLines []string, fi
 			}
 		}
 	}
-	
+
 	// Check for duplicates (possible merge conflicts)
 	for name, count := range functionNames {
 		if count > 1 {
@@ -1074,7 +1083,7 @@ func (r *ConflictResolver) validateFunctionSignatures(resolvedLines []string, fi
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -1083,7 +1092,7 @@ func (r *ConflictResolver) validateImportStatements(lines []string) bool {
 	importRegex := regexp.MustCompile(`^\s*import\s+`)
 	quotedImportRegex := regexp.MustCompile(`^\s*"[^"]+"\s*$`)
 	aliasImportRegex := regexp.MustCompile(`^\s*\w+\s+"[^"]+"\s*$`)
-	
+
 	for _, line := range lines {
 		if importRegex.MatchString(line) {
 			// Single import statement
@@ -1094,31 +1103,31 @@ func (r *ConflictResolver) validateImportStatements(lines []string) bool {
 					return false // Unclosed import string
 				}
 			}
-		} else if strings.TrimSpace(line) != "" && 
-			(quotedImportRegex.MatchString(strings.TrimSpace(line)) || 
-			 aliasImportRegex.MatchString(strings.TrimSpace(line))) {
+		} else if strings.TrimSpace(line) != "" &&
+			(quotedImportRegex.MatchString(strings.TrimSpace(line)) ||
+				aliasImportRegex.MatchString(strings.TrimSpace(line))) {
 			// Import line within import block - basic validation
 			continue
 		}
 	}
-	
+
 	return true
 }
 
 // followsGoIdioms checks if the code follows common Go idioms
 func (r *ConflictResolver) followsGoIdioms(lines []string) bool {
 	codeContent := strings.Join(lines, "\n")
-	
+
 	// Check for proper error handling patterns
 	hasProperErrorHandling := strings.Contains(codeContent, "if err != nil") ||
 		strings.Contains(codeContent, "return err") ||
 		strings.Contains(codeContent, "return nil, err")
-	
+
 	// Check for proper naming conventions
 	hasGoodNaming := true
 	variableRegex := regexp.MustCompile(`\b[a-z][a-zA-Z0-9]*\b`)
 	constantRegex := regexp.MustCompile(`\b[A-Z][A-Z0-9_]*\b`)
-	
+
 	// Bonus points for following Go idioms
 	idiomsScore := 0
 	if hasProperErrorHandling {
@@ -1133,16 +1142,16 @@ func (r *ConflictResolver) followsGoIdioms(lines []string) bool {
 	if variableRegex.MatchString(codeContent) || constantRegex.MatchString(codeContent) {
 		idiomsScore++ // Proper naming conventions
 	}
-	
+
 	return idiomsScore >= 2 // At least 2 positive idiom indicators
 }
 
 // buildRefinementPrompt builds a prompt for refining a low-confidence resolution
 func (r *ConflictResolver) buildRefinementPrompt(resolution gitutils.ConflictResolution, file payload.ConflictFilePayload, turn int) string {
 	var prompt strings.Builder
-	
+
 	prompt.WriteString(fmt.Sprintf("**MULTI-TURN CONFLICT RESOLUTION REFINEMENT - Turn %d**\n\n", turn))
-	
+
 	if turn == 1 {
 		prompt.WriteString("I provided a resolution for a Go merge conflict, but the confidence score was low (")
 		prompt.WriteString(fmt.Sprintf("%.2f", resolution.Confidence))
@@ -1157,7 +1166,7 @@ func (r *ConflictResolver) buildRefinementPrompt(resolution gitutils.ConflictRes
 		prompt.WriteString("2. **Type safety** and interface compatibility\n")
 		prompt.WriteString("3. **Semantic correctness** and maintainability\n\n")
 	}
-	
+
 	prompt.WriteString("**CURRENT RESOLUTION:**\n")
 	prompt.WriteString(fmt.Sprintf("File: %s (lines %d-%d)\n", resolution.FilePath, resolution.StartLine, resolution.EndLine))
 	prompt.WriteString(fmt.Sprintf("Confidence: %.2f\n", resolution.Confidence))
@@ -1168,7 +1177,7 @@ func (r *ConflictResolver) buildRefinementPrompt(resolution gitutils.ConflictRes
 	for _, line := range resolution.ResolvedLines {
 		prompt.WriteString("  " + line + "\n")
 	}
-	
+
 	prompt.WriteString("\n**ORIGINAL CONFLICT:**\n")
 	// Find the specific conflict hunk
 	for _, conflict := range file.Conflicts {
@@ -1191,23 +1200,23 @@ func (r *ConflictResolver) buildRefinementPrompt(resolution gitutils.ConflictRes
 			break
 		}
 	}
-	
+
 	// Add Go-specific context
 	goContext := r.extractGoContext(file, r.repoPath)
 	if goContext != "" {
 		prompt.WriteString("\n**GO CONTEXT:**\n")
 		prompt.WriteString(goContext)
 	}
-	
+
 	prompt.WriteString("\n**REFINEMENT REQUEST:**\n")
 	prompt.WriteString("Please provide an improved resolution with:\n")
 	prompt.WriteString("- Higher confidence score (ideally > 0.7)\n")
 	prompt.WriteString("- Detailed explanation of improvements made\n")
 	prompt.WriteString("- Go-specific validation of the solution\n")
 	prompt.WriteString("- Consideration of edge cases and compatibility\n\n")
-	
+
 	prompt.WriteString("Respond in the same JSON format as before.")
-	
+
 	return prompt.String()
 }
 
@@ -1219,39 +1228,39 @@ func (r *ConflictResolver) isGoFile(filePath string) bool {
 // validateSemanticCorrectness performs comprehensive semantic validation on Go code
 func (r *ConflictResolver) validateSemanticCorrectness(resolution gitutils.ConflictResolution) error {
 	codeContent := strings.Join(resolution.ResolvedLines, "\n")
-	
+
 	// Check for common semantic issues
 	var issues []string
-	
+
 	// 1. Check for incomplete function definitions
 	if r.hasIncompleteFunctions(codeContent) {
 		issues = append(issues, "incomplete function definitions detected")
 	}
-	
+
 	// 2. Check for unbalanced control structures
 	if r.hasUnbalancedControlStructures(codeContent) {
 		issues = append(issues, "unbalanced control structures detected")
 	}
-	
+
 	// 3. Check for invalid variable declarations
 	if r.hasInvalidVariableDeclarations(codeContent) {
 		issues = append(issues, "invalid variable declarations detected")
 	}
-	
+
 	// 4. Check for improper error handling
 	if r.hasImproperErrorHandling(codeContent) {
 		issues = append(issues, "improper error handling patterns detected")
 	}
-	
+
 	// 5. Check for type consistency issues
 	if r.hasTypeConsistencyIssues(codeContent) {
 		issues = append(issues, "type consistency issues detected")
 	}
-	
+
 	if len(issues) > 0 {
 		return fmt.Errorf("semantic validation failed: %s", strings.Join(issues, ", "))
 	}
-	
+
 	return nil
 }
 
@@ -1260,14 +1269,14 @@ func (r *ConflictResolver) hasIncompleteFunctions(code string) bool {
 	// Look for function declarations without bodies
 	funcWithoutBodyRegex := regexp.MustCompile(`func\s+\w+\([^)]*\)[^{]*$`)
 	lines := strings.Split(code, "\n")
-	
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if funcWithoutBodyRegex.MatchString(line) && !strings.Contains(line, "{") {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -1276,10 +1285,10 @@ func (r *ConflictResolver) hasUnbalancedControlStructures(code string) bool {
 	lines := strings.Split(code, "\n")
 	braceDepth := 0
 	controlStructures := []string{"if", "for", "switch", "select"}
-	
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		
+
 		// Check for control structure keywords
 		for _, keyword := range controlStructures {
 			if strings.HasPrefix(line, keyword+" ") || strings.HasPrefix(line, keyword+"(") {
@@ -1289,7 +1298,7 @@ func (r *ConflictResolver) hasUnbalancedControlStructures(code string) bool {
 				}
 			}
 		}
-		
+
 		// Track brace depth
 		for _, char := range line {
 			if char == '{' {
@@ -1302,7 +1311,7 @@ func (r *ConflictResolver) hasUnbalancedControlStructures(code string) bool {
 			}
 		}
 	}
-	
+
 	return braceDepth != 0 // Should end with balanced braces
 }
 
@@ -1310,18 +1319,18 @@ func (r *ConflictResolver) hasUnbalancedControlStructures(code string) bool {
 func (r *ConflictResolver) hasInvalidVariableDeclarations(code string) bool {
 	// Check for common variable declaration issues
 	invalidPatterns := []string{
-		"var = ", // Missing variable name
-		":= var", // Invalid short declaration
-		"var {", // Invalid syntax
+		"var = ",   // Missing variable name
+		":= var",   // Invalid short declaration
+		"var {",    // Invalid syntax
 		"const = ", // Missing constant name
 	}
-	
+
 	for _, pattern := range invalidPatterns {
 		if strings.Contains(code, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -1329,10 +1338,10 @@ func (r *ConflictResolver) hasInvalidVariableDeclarations(code string) bool {
 func (r *ConflictResolver) hasImproperErrorHandling(code string) bool {
 	// Look for functions that return error but don't handle it properly
 	lines := strings.Split(code, "\n")
-	
+
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
-		
+
 		// Check for function calls that likely return errors
 		if strings.Contains(line, "(") && strings.Contains(line, ")") {
 			// Look for assignment to err variable
@@ -1341,15 +1350,15 @@ func (r *ConflictResolver) hasImproperErrorHandling(code string) bool {
 				errorHandled := false
 				for j := i + 1; j < len(lines) && j < i+3; j++ {
 					nextLine := strings.TrimSpace(lines[j])
-					if strings.Contains(nextLine, "if err != nil") || 
-					   strings.Contains(nextLine, "return err") ||
-					   strings.Contains(nextLine, "log.Fatal") ||
-					   strings.Contains(nextLine, "panic") {
+					if strings.Contains(nextLine, "if err != nil") ||
+						strings.Contains(nextLine, "return err") ||
+						strings.Contains(nextLine, "log.Fatal") ||
+						strings.Contains(nextLine, "panic") {
 						errorHandled = true
 						break
 					}
 				}
-				
+
 				if !errorHandled && strings.Contains(line, ", err") {
 					// Error is assigned but not handled
 					return true
@@ -1357,7 +1366,7 @@ func (r *ConflictResolver) hasImproperErrorHandling(code string) bool {
 			}
 		}
 	}
-	
+
 	return false
 }
 
@@ -1365,18 +1374,18 @@ func (r *ConflictResolver) hasImproperErrorHandling(code string) bool {
 func (r *ConflictResolver) hasTypeConsistencyIssues(code string) bool {
 	// Check for obvious type mismatches
 	typeMismatchPatterns := []string{
-		"string = int", // Direct type mismatch
-		"int = string", // Direct type mismatch
+		"string = int",  // Direct type mismatch
+		"int = string",  // Direct type mismatch
 		"bool = string", // Direct type mismatch
 		"string = bool", // Direct type mismatch
 	}
-	
+
 	for _, pattern := range typeMismatchPatterns {
 		if strings.Contains(code, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

@@ -43,7 +43,7 @@ func GetConflictDiff(repoPath string, filePaths []string) ([]DiffFile, error) {
 // validateAllFilePaths validates multiple file paths
 func validateAllFilePaths(filePaths []string) ([]string, error) {
 	validatedPaths := make([]string, len(filePaths))
-	
+
 	for i, filePath := range filePaths {
 		cleanPath, err := validateFilePath(filePath)
 		if err != nil {
@@ -51,7 +51,7 @@ func validateAllFilePaths(filePaths []string) ([]string, error) {
 		}
 		validatedPaths[i] = cleanPath
 	}
-	
+
 	return validatedPaths, nil
 }
 
@@ -119,14 +119,14 @@ func getMergeBase(repoPath string) (string, error) {
 // validateFilePath validates and sanitizes file path to prevent command injection
 func validateFilePath(filePath string) (string, error) {
 	cleanPath := filepath.Clean(filePath)
-	
+
 	if strings.Contains(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") ||
 		strings.Contains(cleanPath, ";") || strings.Contains(cleanPath, "&") ||
 		strings.Contains(cleanPath, "|") || strings.Contains(cleanPath, "`") ||
 		strings.Contains(cleanPath, "$") {
 		return "", fmt.Errorf("invalid file path: %s", filePath)
 	}
-	
+
 	// Additional validation to ensure path contains only safe characters
 	matched, err := regexp.MatchString(`^[a-zA-Z0-9._/\-]+$`, cleanPath)
 	if err != nil {

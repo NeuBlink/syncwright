@@ -36,7 +36,7 @@ type ConflictFilePayload struct {
 
 // ConflictHunkPayload represents a conflict hunk with essential data
 type ConflictHunkPayload struct {
-	ID          string   `json:"id,omitempty"`         // For compatibility with existing code
+	ID          string   `json:"id,omitempty"` // For compatibility with existing code
 	StartLine   int      `json:"start_line"`
 	EndLine     int      `json:"end_line"`
 	OursLines   []string `json:"ours_lines"`
@@ -146,7 +146,7 @@ func shouldExcludeFile(filePath string) bool {
 // detectSimpleLanguage performs basic language detection based on file extension
 func detectSimpleLanguage(filePath string) string {
 	ext := strings.ToLower(filepath.Ext(filePath))
-	
+
 	switch ext {
 	case ".go":
 		return "go"

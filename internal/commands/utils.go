@@ -251,7 +251,6 @@ type bracketCounts struct {
 	brackets int
 }
 
-
 // checkJSSemicolon checks for missing semicolons in JavaScript/TypeScript
 func checkJSSemicolon(trimmed string, lineNum int) string {
 	if trimmed != "" && !strings.HasSuffix(trimmed, ";") &&
@@ -271,7 +270,7 @@ func validateJSSyntax(lines []string) ValidationResult {
 		trimmed := strings.TrimSpace(line)
 		lineCounts := &bracketCounts{}
 		countBrackets(trimmed, lineCounts)
-		
+
 		// Accumulate bracket counts
 		totalCounts.braces += lineCounts.braces
 		totalCounts.parens += lineCounts.parens
@@ -389,7 +388,7 @@ func validateJavaSyntax(lines []string) ValidationResult {
 		trimmed := strings.TrimSpace(line)
 		lineCounts := &bracketCounts{}
 		countBrackets(trimmed, lineCounts)
-		
+
 		// Accumulate bracket counts
 		totalCounts.braces += lineCounts.braces
 		totalCounts.parens += lineCounts.parens
@@ -481,8 +480,8 @@ func hasConflictMarkers(lines []string) bool {
 
 // SafeApplyResolutions applies resolutions with validation and safety checks
 func SafeApplyResolutions(
-	repoPath string, 
-	resolutions []gitutils.ConflictResolution, 
+	repoPath string,
+	resolutions []gitutils.ConflictResolution,
 	options SafeApplyOptions,
 ) (*gitutils.ResolutionResult, error) {
 	result := &gitutils.ResolutionResult{

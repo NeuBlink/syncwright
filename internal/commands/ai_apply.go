@@ -1,25 +1,26 @@
 package commands
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/NeuBlink/syncwright/internal/claude"
 	"github.com/NeuBlink/syncwright/internal/gitutils"
+	"github.com/NeuBlink/syncwright/internal/logging"
 	"github.com/NeuBlink/syncwright/internal/payload"
+	"github.com/NeuBlink/syncwright/internal/validation"
+	"go.uber.org/zap"
 )
 
 // AIApplyOptions contains options for the ai-apply command
 type AIApplyOptions struct {
 	PayloadFile    string
 	RepoPath       string
-	APIKey         string
-	APIEndpoint    string
 	OutputFile     string
 	DryRun         bool
 	Verbose        bool
@@ -41,22 +42,7 @@ type AIApplyResult struct {
 	ApplicationResult  *gitutils.ResolutionResult    `json:"application_result,omitempty"`
 	ErrorMessage       string                        `json:"error_message,omitempty"`
 	AIResponse         *AIResolveResponse            `json:"ai_response,omitempty"`
-}
-
-// AIResolveRequest represents the request sent to Claude Code API
-type AIResolveRequest struct {
-	Payload     *payload.ConflictPayload `json:"payload"`
-	Preferences AIPreferences            `json:"preferences"`
-	Context     string                   `json:"context"`
-}
-
-// AIPreferences contains preferences for AI resolution
-type AIPreferences struct {
-	MinConfidence    float64 `json:"min_confidence"`
-	PreferExplicit   bool    `json:"prefer_explicit"`
-	IncludeReasoning bool    `json:"include_reasoning"`
-	PreserveBoth     bool    `json:"preserve_both_when_uncertain"`
-	MaxResolutions   int     `json:"max_resolutions"`
+	ValidationResult   *validation.ValidationResult  `json:"validation_result,omitempty"`
 }
 
 // AIResolveResponse represents the response from Claude Code API
@@ -73,16 +59,13 @@ type AIResolveResponse struct {
 
 // AIApplyCommand implements the ai-apply subcommand
 type AIApplyCommand struct {
-	options AIApplyOptions
-	client  *http.Client
+	options  AIApplyOptions
+	resolver *claude.ConflictResolver
 }
 
 // NewAIApplyCommand creates a new ai-apply command
-func NewAIApplyCommand(options AIApplyOptions) *AIApplyCommand {
+func NewAIApplyCommand(options AIApplyOptions) (*AIApplyCommand, error) {
 	// Set defaults
-	if options.APIEndpoint == "" {
-		options.APIEndpoint = "https://api.anthropic.com/v1/claude-code/resolve-conflicts"
-	}
 	if options.MinConfidence == 0 {
 		options.MinConfidence = 0.7
 	}
@@ -90,7 +73,7 @@ func NewAIApplyCommand(options AIApplyOptions) *AIApplyCommand {
 		options.MaxRetries = 3
 	}
 	if options.TimeoutSeconds == 0 {
-		options.TimeoutSeconds = 120
+		options.TimeoutSeconds = 300 // Extended for Claude CLI operations
 	}
 	if options.RepoPath == "" {
 		if wd, err := os.Getwd(); err == nil {
@@ -98,14 +81,35 @@ func NewAIApplyCommand(options AIApplyOptions) *AIApplyCommand {
 		}
 	}
 
-	client := &http.Client{
-		Timeout: time.Duration(options.TimeoutSeconds) * time.Second,
+	// Create ConflictResolver with proper Claude CLI configuration
+	config := &claude.ConflictResolverConfig{
+		ClaudeConfig: &claude.Config{
+			CLIPath:          "claude",
+			PrintMode:        true,
+			OutputFormat:     "json",
+			MaxTurns:         3,
+			TimeoutSeconds:   options.TimeoutSeconds,
+			AllowedTools:     []string{"Read", "Write", "Edit", "MultiEdit", "Bash", "Grep", "Glob", "LS"},
+			WorkingDirectory: options.RepoPath,
+			Verbose:          options.Verbose,
+		},
+		RepoPath:         options.RepoPath,
+		MinConfidence:    options.MinConfidence,
+		MaxBatchSize:     10,
+		IncludeReasoning: true,
+		Verbose:          options.Verbose,
+		EnableMultiTurn:  false, // Disable for batch processing
+	}
+
+	resolver, err := claude.NewConflictResolver(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create conflict resolver: %w", err)
 	}
 
 	return &AIApplyCommand{
-		options: options,
-		client:  client,
-	}
+		options:  options,
+		resolver: resolver,
+	}, nil
 }
 
 // Execute runs the ai-apply command
@@ -152,17 +156,15 @@ func (a *AIApplyCommand) prepareInput(result *AIApplyResult) (*payload.ConflictP
 		return nil, err
 	}
 
+	logging.Logger.ConflictResolution("payload_loaded", zap.Int("conflicted_files", len(conflictPayload.Files)))
 	if a.options.Verbose {
 		fmt.Printf("Loaded payload with %d conflicted files\n", len(conflictPayload.Files))
 	}
 
-	// Validate API key
-	if a.options.APIKey == "" {
-		a.options.APIKey = os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
-		if a.options.APIKey == "" {
-			result.ErrorMessage = "API key not provided. Set CLAUDE_CODE_OAUTH_TOKEN environment variable or use --api-key flag"
-			return nil, fmt.Errorf("missing API key")
-		}
+	// Validate Claude CLI availability
+	if !a.resolver.IsAvailable() {
+		result.ErrorMessage = "Claude Code CLI is not available. Please ensure 'claude' is installed and in your PATH"
+		return nil, fmt.Errorf("Claude CLI not available")
 	}
 
 	// Create backup if requested
@@ -178,7 +180,7 @@ func (a *AIApplyCommand) prepareInput(result *AIApplyResult) (*payload.ConflictP
 
 // getAIResolutions sends payload to AI and gets response
 func (a *AIApplyCommand) getAIResolutions(
-	conflictPayload *payload.ConflictPayload, 
+	conflictPayload *payload.ConflictPayload,
 	result *AIApplyResult,
 ) (*AIResolveResponse, error) {
 	aiResponse, err := a.sendToAI(conflictPayload)
@@ -194,6 +196,9 @@ func (a *AIApplyCommand) getAIResolutions(
 		return nil, fmt.Errorf("AI resolution failed")
 	}
 
+	logging.Logger.ConflictResolution("ai_resolutions_generated",
+		zap.Int("resolutions_count", len(aiResponse.Resolutions)),
+		zap.Float64("overall_confidence", aiResponse.OverallConfidence))
 	if a.options.Verbose {
 		fmt.Printf("AI generated %d resolutions with overall confidence %.2f\n",
 			len(aiResponse.Resolutions), aiResponse.OverallConfidence)
@@ -204,13 +209,18 @@ func (a *AIApplyCommand) getAIResolutions(
 
 // processResolutions filters resolutions by confidence
 func (a *AIApplyCommand) processResolutions(
-	aiResponse *AIResolveResponse, 
+	aiResponse *AIResolveResponse,
 	result *AIApplyResult,
 ) []gitutils.ConflictResolution {
 	filteredResolutions := a.filterResolutionsByConfidence(aiResponse.Resolutions)
 	result.Resolutions = filteredResolutions
 	result.SkippedResolutions = len(aiResponse.Resolutions) - len(filteredResolutions)
 
+	if result.SkippedResolutions > 0 {
+		logging.Logger.ConflictResolution("resolutions_skipped",
+			zap.Int("skipped_count", result.SkippedResolutions),
+			zap.Float64("min_confidence", a.options.MinConfidence))
+	}
 	if a.options.Verbose && result.SkippedResolutions > 0 {
 		fmt.Printf("Skipped %d resolutions due to low confidence (< %.2f)\n",
 			result.SkippedResolutions, a.options.MinConfidence)
@@ -221,10 +231,11 @@ func (a *AIApplyCommand) processResolutions(
 
 // applyResolutionsIfNeeded applies resolutions based on options
 func (a *AIApplyCommand) applyResolutionsIfNeeded(
-	filteredResolutions []gitutils.ConflictResolution, 
+	filteredResolutions []gitutils.ConflictResolution,
 	result *AIApplyResult,
 ) error {
 	if a.options.DryRun {
+		logging.Logger.ConflictResolution("dry_run_completed", zap.Int("would_apply_count", len(filteredResolutions)))
 		result.Success = true
 		fmt.Printf("Dry run: Would apply %d resolutions\n", len(filteredResolutions))
 		return nil
@@ -244,7 +255,7 @@ func (a *AIApplyCommand) applyResolutionsIfNeeded(
 
 // applyResolutionsAutomatically applies resolutions without user interaction
 func (a *AIApplyCommand) applyResolutionsAutomatically(
-	filteredResolutions []gitutils.ConflictResolution, 
+	filteredResolutions []gitutils.ConflictResolution,
 	result *AIApplyResult,
 ) error {
 	applicationResult, err := gitutils.ApplyResolutions(a.options.RepoPath, filteredResolutions)
@@ -258,6 +269,9 @@ func (a *AIApplyCommand) applyResolutionsAutomatically(
 	result.FailedResolutions = applicationResult.FailedCount
 	result.Success = applicationResult.Success
 
+	logging.Logger.ConflictResolution("resolutions_applied",
+		zap.Int("applied_count", result.AppliedResolutions),
+		zap.Int("failed_count", result.FailedResolutions))
 	if a.options.Verbose {
 		fmt.Printf("Applied %d resolutions, %d failed\n",
 			result.AppliedResolutions, result.FailedResolutions)
@@ -268,7 +282,7 @@ func (a *AIApplyCommand) applyResolutionsAutomatically(
 
 // applyResolutionsInteractively applies resolutions with user confirmation
 func (a *AIApplyCommand) applyResolutionsInteractively(
-	filteredResolutions []gitutils.ConflictResolution, 
+	filteredResolutions []gitutils.ConflictResolution,
 	result *AIApplyResult,
 ) error {
 	if a.askForConfirmation(filteredResolutions) {
@@ -283,6 +297,7 @@ func (a *AIApplyCommand) applyResolutionsInteractively(
 		result.FailedResolutions = applicationResult.FailedCount
 		result.Success = applicationResult.Success
 	} else {
+		logging.Logger.ConflictResolution("application_cancelled", zap.String("reason", "user_choice"))
 		result.Success = true
 		fmt.Println("Resolution application cancelled by user")
 	}
@@ -290,7 +305,7 @@ func (a *AIApplyCommand) applyResolutionsInteractively(
 	return nil
 }
 
-// loadPayload loads the conflict payload from file or stdin
+// loadPayload loads and validates the conflict payload from file or stdin
 func (a *AIApplyCommand) loadPayload() (*payload.ConflictPayload, error) {
 	var data []byte
 	var err error
@@ -309,87 +324,136 @@ func (a *AIApplyCommand) loadPayload() (*payload.ConflictPayload, error) {
 		}
 	}
 
-	if len(data) == 0 {
-		return nil, fmt.Errorf("empty payload data")
+	// Validate payload with security checks
+	validator := validation.NewPayloadValidator()
+	validatedPayload, validationResult, err := validator.ValidateAndSanitize(data)
+	if err != nil {
+		if validationResult != nil {
+			logging.Logger.ErrorSafe("Payload validation failed",
+				zap.Int("error_count", len(validationResult.Errors)),
+				zap.Error(err))
+		}
+		if a.options.Verbose && validationResult != nil {
+			fmt.Printf("Validation failed with %d errors:\n", len(validationResult.Errors))
+			for _, valErr := range validationResult.Errors {
+				fmt.Printf("  - %s: %s\n", valErr.Field, valErr.Message)
+			}
+		}
+		return nil, fmt.Errorf("payload validation failed: %w", err)
 	}
 
-	return payload.FromJSON(data)
+	if validationResult != nil {
+		logging.Logger.ConflictResolution("payload_validation_successful",
+			zap.Int("total_files", validationResult.Summary.TotalFiles),
+			zap.Int("total_conflicts", validationResult.Summary.TotalConflicts),
+			zap.Int("payload_size_bytes", validationResult.Summary.PayloadSize))
+	}
+	if a.options.Verbose && validationResult != nil {
+		fmt.Printf("Payload validation successful: %d files, %d conflicts, %d bytes\n",
+			validationResult.Summary.TotalFiles,
+			validationResult.Summary.TotalConflicts,
+			validationResult.Summary.PayloadSize)
+	}
+
+	// Convert validated payload back to original format
+	return a.convertValidatedPayload(validatedPayload), nil
 }
 
-// sendToAI sends the conflict payload to Claude Code API
-func (a *AIApplyCommand) sendToAI(conflictPayload *payload.ConflictPayload) (*AIResolveResponse, error) {
-	request := AIResolveRequest{
-		Payload: conflictPayload,
-		Preferences: AIPreferences{
-			MinConfidence:    a.options.MinConfidence,
-			PreferExplicit:   true,
-			IncludeReasoning: true,
-			PreserveBoth:     false,
-			MaxResolutions:   100,
+// convertValidatedPayload converts a validated payload back to the original format
+func (a *AIApplyCommand) convertValidatedPayload(validated *validation.ValidatedConflictPayload) *payload.ConflictPayload {
+	result := &payload.ConflictPayload{
+		Metadata: payload.PayloadMetadata{
+			Timestamp:      validated.Metadata.Timestamp,
+			RepoPath:       validated.Metadata.RepoPath,
+			TotalFiles:     validated.Metadata.TotalFiles,
+			TotalConflicts: validated.Metadata.TotalConflicts,
+			Version:        validated.Metadata.Version,
 		},
-		Context: "Please resolve these merge conflicts intelligently, preserving the intent of both sides when possible.",
 	}
 
-	requestData, err := json.Marshal(request)
+	for _, validatedFile := range validated.Files {
+		file := payload.ConflictFilePayload{
+			Path:     validatedFile.Path,
+			Language: validatedFile.Language,
+			Context: payload.FileContext{
+				BeforeLines: validatedFile.Context.BeforeLines,
+				AfterLines:  validatedFile.Context.AfterLines,
+			},
+		}
+
+		for _, validatedConflict := range validatedFile.Conflicts {
+			conflict := payload.ConflictHunkPayload{
+				ID:          validatedConflict.ID,
+				StartLine:   validatedConflict.StartLine,
+				EndLine:     validatedConflict.EndLine,
+				OursLines:   validatedConflict.OursLines,
+				TheirsLines: validatedConflict.TheirsLines,
+				BaseLines:   validatedConflict.BaseLines,
+			}
+			file.Conflicts = append(file.Conflicts, conflict)
+		}
+
+		result.Files = append(result.Files, file)
+	}
+
+	return result
+}
+
+// sendToAI sends the conflict payload to Claude Code CLI via ConflictResolver
+func (a *AIApplyCommand) sendToAI(conflictPayload *payload.ConflictPayload) (*AIResolveResponse, error) {
+	logging.Logger.ConflictResolution("sending_to_ai", zap.Int("files_count", len(conflictPayload.Files)))
+	if a.options.Verbose {
+		fmt.Printf("Sending conflict resolution request to Claude CLI\n")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(a.options.TimeoutSeconds)*time.Second)
+	defer cancel()
+
+	// Use ConflictResolver to process the conflicts
+	result, err := a.resolver.ResolveConflicts(ctx, conflictPayload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("conflict resolution failed: %w", err)
 	}
 
-	var lastErr error
-	for attempt := 0; attempt < a.options.MaxRetries; attempt++ {
-		if attempt > 0 {
-			if a.options.Verbose {
-				fmt.Printf("Retrying API request (attempt %d/%d)\n", attempt+1, a.options.MaxRetries)
-			}
-			time.Sleep(time.Duration(attempt) * time.Second)
-		}
-
-		req, err := http.NewRequest("POST", a.options.APIEndpoint, bytes.NewReader(requestData))
-		if err != nil {
-			lastErr = fmt.Errorf("failed to create request: %w", err)
-			continue
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+a.options.APIKey)
-		req.Header.Set("User-Agent", "Syncwright/1.0.0")
-
-		if a.options.Verbose {
-			fmt.Printf("Sending request to AI API: %s\n", a.options.APIEndpoint)
-		}
-
-		resp, err := a.client.Do(req)
-		if err != nil {
-			lastErr = fmt.Errorf("request failed: %w", err)
-			continue
-		}
-		defer func() {
-			if closeErr := resp.Body.Close(); closeErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to close response body: %v\n", closeErr)
-			}
-		}()
-
-		responseData, err := io.ReadAll(resp.Body)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to read response: %w", err)
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(responseData))
-			continue
-		}
-
-		var aiResponse AIResolveResponse
-		if err := json.Unmarshal(responseData, &aiResponse); err != nil {
-			lastErr = fmt.Errorf("failed to unmarshal response: %w", err)
-			continue
-		}
-
-		return &aiResponse, nil
+	if !result.Success {
+		return &AIResolveResponse{
+			Success:      false,
+			ErrorMessage: result.ErrorMessage,
+		}, nil
 	}
 
-	return nil, fmt.Errorf("all retry attempts failed, last error: %w", lastErr)
+	// Convert ConflictResolver result to AIResolveResponse format
+	aiResponse := &AIResolveResponse{
+		Success:           result.Success,
+		Resolutions:       result.Resolutions,
+		OverallConfidence: result.OverallConfidence,
+		ProcessingTime:    result.ProcessingTime.Seconds(),
+		Warnings:          result.Warnings,
+	}
+
+	// Add reasoning from resolutions if available
+	if len(result.Resolutions) > 0 && result.Resolutions[0].Reasoning != "" {
+		var reasonings []string
+		for _, resolution := range result.Resolutions {
+			if resolution.Reasoning != "" {
+				reasonings = append(reasonings, fmt.Sprintf("%s: %s", resolution.FilePath, resolution.Reasoning))
+			}
+		}
+		if len(reasonings) > 0 {
+			aiResponse.Reasoning = strings.Join(reasonings, "; ")
+		}
+	}
+
+	logging.Logger.ConflictResolution("ai_response_received",
+		zap.Int("resolved_conflicts", len(aiResponse.Resolutions)),
+		zap.Float64("overall_confidence", aiResponse.OverallConfidence),
+		zap.Float64("processing_time_seconds", aiResponse.ProcessingTime))
+	if a.options.Verbose {
+		fmt.Printf("Claude CLI resolved %d conflicts with overall confidence %.2f\n",
+			len(aiResponse.Resolutions), aiResponse.OverallConfidence)
+	}
+
+	return aiResponse, nil
 }
 
 // filterResolutionsByConfidence filters resolutions based on confidence threshold
@@ -421,6 +485,7 @@ func (a *AIApplyCommand) createBackups(conflictPayload *payload.ConflictPayload)
 		}
 	}
 
+	logging.Logger.InfoSafe("Backup files created", zap.Int("file_count", len(filesToBackup)))
 	if a.options.Verbose {
 		fmt.Printf("Created backups for %d files\n", len(filesToBackup))
 	}
@@ -482,6 +547,7 @@ func (a *AIApplyCommand) outputResults(result *AIApplyResult) error {
 			return fmt.Errorf("failed to write results to file: %w", err)
 		}
 
+		logging.Logger.InfoSafe("AI apply results written to file", zap.String("output_file", a.options.OutputFile))
 		if a.options.Verbose {
 			fmt.Printf("Results written to: %s\n", a.options.OutputFile)
 		}
@@ -491,32 +557,44 @@ func (a *AIApplyCommand) outputResults(result *AIApplyResult) error {
 }
 
 // ApplyAIResolutions is a convenience function for applying AI resolutions
-func ApplyAIResolutions(payloadFile, repoPath, apiKey string) (*AIApplyResult, error) {
+func ApplyAIResolutions(payloadFile, repoPath string) (*AIApplyResult, error) {
 	options := AIApplyOptions{
 		PayloadFile: payloadFile,
 		RepoPath:    repoPath,
-		APIKey:      apiKey,
 		AutoApply:   false,
 		DryRun:      false,
 		Verbose:     true,
 		BackupFiles: true,
 	}
 
-	cmd := NewAIApplyCommand(options)
+	cmd, err := NewAIApplyCommand(options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AI apply command: %w", err)
+	}
 	return cmd.Execute()
 }
 
 // ApplyAIResolutionsDryRun is a convenience function for dry-run AI resolution
-func ApplyAIResolutionsDryRun(payloadFile, repoPath, apiKey string) (*AIApplyResult, error) {
+func ApplyAIResolutionsDryRun(payloadFile, repoPath string) (*AIApplyResult, error) {
 	options := AIApplyOptions{
 		PayloadFile: payloadFile,
 		RepoPath:    repoPath,
-		APIKey:      apiKey,
 		DryRun:      true,
 		Verbose:     true,
 		BackupFiles: false,
 	}
 
-	cmd := NewAIApplyCommand(options)
+	cmd, err := NewAIApplyCommand(options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AI apply command: %w", err)
+	}
 	return cmd.Execute()
+}
+
+// Close cleans up the AI apply command resources
+func (a *AIApplyCommand) Close() error {
+	if a.resolver != nil {
+		return a.resolver.Close()
+	}
+	return nil
 }

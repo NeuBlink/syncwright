@@ -68,7 +68,7 @@ func TestBatchCommandWithCustomOptions(t *testing.T) {
 // TestCountTotalConflicts tests the conflict counting functionality
 func TestCountTotalConflicts(t *testing.T) {
 	cmd := NewBatchCommand(BatchOptions{})
-	
+
 	// Create test payload
 	conflictPayload := &payload.ConflictPayload{
 		Files: []payload.ConflictFilePayload{
@@ -100,7 +100,7 @@ func TestCountTotalConflicts(t *testing.T) {
 // TestCreateBatchesByLanguage tests the language-based batching strategy
 func TestCreateBatchesByLanguage(t *testing.T) {
 	cmd := NewBatchCommand(BatchOptions{BatchSize: 2})
-	
+
 	// Create test payload with multiple languages
 	conflictPayload := &payload.ConflictPayload{
 		Files: []payload.ConflictFilePayload{
@@ -146,12 +146,12 @@ func TestCreateBatchesByLanguage(t *testing.T) {
 // TestCreateBatchesByFile tests the file-based batching strategy
 func TestCreateBatchesByFile(t *testing.T) {
 	cmd := NewBatchCommand(BatchOptions{})
-	
+
 	// Create test payload
 	conflictPayload := &payload.ConflictPayload{
 		Files: []payload.ConflictFilePayload{
-			{Path: "file1.go", Conflicts: []payload.ConflictHunkPayload{{}, {}}}, // 2 conflicts
-			{Path: "file2.go", Conflicts: []payload.ConflictHunkPayload{{}}},      // 1 conflict
+			{Path: "file1.go", Conflicts: []payload.ConflictHunkPayload{{}, {}}},     // 2 conflicts
+			{Path: "file2.go", Conflicts: []payload.ConflictHunkPayload{{}}},         // 1 conflict
 			{Path: "file3.py", Conflicts: []payload.ConflictHunkPayload{{}, {}, {}}}, // 3 conflicts
 		},
 	}
@@ -182,7 +182,7 @@ func TestCreateBatchesByFile(t *testing.T) {
 // TestCreateBatchesBySize tests the size-based batching strategy
 func TestCreateBatchesBySize(t *testing.T) {
 	cmd := NewBatchCommand(BatchOptions{MaxTokens: 50}) // Very small token limit for testing
-	
+
 	// Create test payload with varying sizes - use longer content to exceed token limit
 	conflictPayload := &payload.ConflictPayload{
 		Files: []payload.ConflictFilePayload{
@@ -236,7 +236,7 @@ func TestCreateBatchesBySize(t *testing.T) {
 // TestCreateBatchesSequential tests the sequential batching strategy
 func TestCreateBatchesSequential(t *testing.T) {
 	cmd := NewBatchCommand(BatchOptions{BatchSize: 2})
-	
+
 	// Create test payload with 5 files
 	conflictPayload := &payload.ConflictPayload{
 		Files: []payload.ConflictFilePayload{
@@ -270,7 +270,7 @@ func TestCreateBatchesSequential(t *testing.T) {
 // TestEstimateTokens tests the token estimation functionality
 func TestEstimateTokens(t *testing.T) {
 	cmd := NewBatchCommand(BatchOptions{})
-	
+
 	files := []payload.ConflictFilePayload{
 		{
 			Path: "test.go",
@@ -284,7 +284,7 @@ func TestEstimateTokens(t *testing.T) {
 	}
 
 	tokens := cmd.estimateTokens(files)
-	
+
 	// Should be greater than 0
 	if tokens <= 0 {
 		t.Errorf("Expected token estimate > 0, got %d", tokens)
@@ -301,7 +301,7 @@ func TestEstimateTokens(t *testing.T) {
 // TestCalculatePerformanceMetrics tests performance metrics calculation
 func TestCalculatePerformanceMetrics(t *testing.T) {
 	cmd := NewBatchCommand(BatchOptions{})
-	
+
 	result := &BatchResult{
 		TotalConflicts: 10,
 		BatchResults: []BatchItemResult{
@@ -335,7 +335,7 @@ func TestCalculatePerformanceMetrics(t *testing.T) {
 // BenchmarkBatchCreation benchmarks batch creation performance
 func BenchmarkBatchCreation(b *testing.B) {
 	cmd := NewBatchCommand(BatchOptions{BatchSize: 10})
-	
+
 	// Create a large test payload
 	files := make([]payload.ConflictFilePayload, 1000)
 	for i := 0; i < 1000; i++ {
@@ -347,7 +347,7 @@ func BenchmarkBatchCreation(b *testing.B) {
 			},
 		}
 	}
-	
+
 	conflictPayload := &payload.ConflictPayload{Files: files}
 
 	b.ResetTimer()
@@ -369,7 +369,7 @@ func TestBatchResultSerialization(t *testing.T) {
 		SuccessfulBatches:  2,
 		AppliedResolutions: 4,
 		Performance: BatchPerformanceMetrics{
-			TotalTimeMs: 3000,
+			TotalTimeMs:      3000,
 			ThroughputPerSec: 1.67,
 		},
 	}

@@ -177,7 +177,7 @@ check_version_consistency() {
         "go.mod"
         "action.yml"
         "README.md"
-        ".goreleaser.yml"
+        ".goreleaser.yaml"
     )
     
     for file in "${files_to_check[@]}"; do

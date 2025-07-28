@@ -524,9 +524,9 @@ func filterFormatters(formatters []Formatter, options FormatOptions) []Formatter
 
 // executeFormatterWithContext runs a formatter with a custom context
 func executeFormatterWithContext(
-	ctx context.Context, 
-	formatter Formatter, 
-	filePath string, 
+	ctx context.Context,
+	formatter Formatter,
+	filePath string,
 	result *FormatResult,
 ) error {
 	// Validate formatter command to prevent command injection

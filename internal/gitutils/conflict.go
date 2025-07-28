@@ -90,7 +90,7 @@ func ParseConflictHunks(filePath, repoPath string) ([]ConflictHunk, error) {
 	if err := validateGitPath(repoPath); err != nil {
 		return nil, fmt.Errorf("invalid repository path: %w", err)
 	}
-	
+
 	cleanPath, err := validateConflictFilePath(filePath)
 	if err != nil {
 		return nil, err
@@ -248,12 +248,12 @@ func ExtractFileContext(filePath, repoPath string, contextLines int) ([]string, 
 	if err := validateGitPath(repoPath); err != nil {
 		return nil, fmt.Errorf("invalid repository path: %w", err)
 	}
-	
+
 	// Validate file path for security
 	if err := validateGitPath(filePath); err != nil {
 		return nil, fmt.Errorf("invalid file path: %w", err)
 	}
-	
+
 	fullPath := filepath.Join(repoPath, filePath)
 	content, err := os.ReadFile(fullPath) // #nosec G304 - repoPath and filePath are validated above
 	if err != nil {
