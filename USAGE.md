@@ -205,7 +205,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: neublink/syncwright@v1.0.2
+      - uses: neublink/syncwright@v1.0.3
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 ```
@@ -258,7 +258,7 @@ jobs:
       - name: Check for conflicts
         id: check
         if: steps.merge.outputs.merge-successful == 'false'
-        uses: neublink/syncwright@v1.0.2
+        uses: neublink/syncwright@v1.0.3
         with:
           run_validation: false
           # Only detect, don't resolve yet
@@ -284,7 +284,7 @@ jobs:
       
       - name: Resolve with confidence ${{ matrix.confidence }}
         id: resolve
-        uses: neublink/syncwright@v1.0.2
+        uses: neublink/syncwright@v1.0.3
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           merge_failed: true
@@ -329,7 +329,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run comprehensive validation
-        uses: neublink/syncwright@v1.0.2
+        uses: neublink/syncwright@v1.0.3
         with:
           run_validation: true
           validation_mode: comprehensive
@@ -375,7 +375,7 @@ jobs:
           fetch-depth: 0
       
       - name: Resolve ${{ matrix.language }} conflicts
-        uses: neublink/syncwright@v1.0.2
+        uses: neublink/syncwright@v1.0.3
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           timeout_seconds: 900      # Extended timeout for large codebases

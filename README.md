@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: neublink/syncwright@v1.0.2.0.1
+      - uses: neublink/syncwright@v1.0.3.0.1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 ```
@@ -77,7 +77,7 @@ syncwright validate --comprehensive
 Use Syncwright as a reusable GitHub Action:
 
 ```yaml
-- uses: neublink/syncwright@v1.0.2
+- uses: neublink/syncwright@v1.0.3
   with:
     claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     merge_failed: true  # Set to true when merge conflicts detected
@@ -322,7 +322,7 @@ syncwright detect --verbose
 
 Or in GitHub Actions:
 ```yaml
-- uses: neublink/syncwright@v1.0.2
+- uses: neublink/syncwright@v1.0.3
   with:
     claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     debug_mode: true

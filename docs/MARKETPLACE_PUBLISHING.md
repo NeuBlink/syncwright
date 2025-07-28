@@ -157,7 +157,7 @@ Syncwright follows [semantic versioning](https://semver.org/):
 
 For user convenience, major version tags (v1, v2, etc.) are automatically updated:
 
-- Users can reference `neublink/syncwright@v1.0.2` for latest v1.x.x
+- Users can reference `neublink/syncwright@v1.0.3` for latest v1.x.x
 - Provides stability while allowing automatic updates
 - Only updated for stable releases (not prereleases)
 
