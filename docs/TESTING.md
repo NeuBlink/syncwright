@@ -77,7 +77,7 @@ The reusable workflow (`syncwright-reusable.yml`) provides:
 ### Consumer Workflow Setup
 Minimal consumer configuration:
 ```yaml
-uses: neublink/syncwright@v1.0.1
+uses: neublink/syncwright@v1.0.2
 with:
   claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 ```
