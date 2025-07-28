@@ -3,14 +3,13 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/NeuBlink/syncwright/internal/gitutils"
-	"github.com/NeuBlink/syncwright/internal/payload"
 )
 
 const (
@@ -20,35 +19,168 @@ const (
 	OutputFormatText = "text"
 )
 
+// SimplifiedConflictPayload represents a simplified payload for AI processing
+type SimplifiedConflictPayload struct {
+	Files []SimplifiedFilePayload `json:"files"`
+}
+
+// SimplifiedFilePayload represents a single file's conflict data
+type SimplifiedFilePayload struct {
+	Path      string                     `json:"path"`
+	Language  string                     `json:"language"`
+	Conflicts []SimplifiedConflictHunk   `json:"conflicts"`
+}
+
+// SimplifiedConflictHunk represents a conflict with minimal context
+type SimplifiedConflictHunk struct {
+	ID          string   `json:"id"`
+	StartLine   int      `json:"start_line"`
+	EndLine     int      `json:"end_line"`
+	OursLines   []string `json:"ours_lines"`
+	TheirsLines []string `json:"theirs_lines"`
+	PreContext  []string `json:"pre_context"`
+	PostContext []string `json:"post_context"`
+}
+
+// detectLanguage determines the programming language from file extension
+func detectLanguage(filePath string) string {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	
+	languageMap := map[string]string{
+		".go":    "go",
+		".js":    "javascript",
+		".jsx":   "javascript",
+		".ts":    "typescript",
+		".tsx":   "typescript",
+		".py":    "python",
+		".java":  "java",
+		".c":     "c",
+		".h":     "c",
+		".cpp":   "cpp",
+		".hpp":   "cpp",
+		".cs":    "csharp",
+		".rb":    "ruby",
+		".php":   "php",
+		".rs":    "rust",
+		".swift": "swift",
+		".json":  "json",
+		".xml":   "xml",
+		".yaml":  "yaml",
+		".yml":   "yaml",
+		".md":    "markdown",
+		".txt":   "text",
+	}
+
+	if lang, exists := languageMap[ext]; exists {
+		return lang
+	}
+	return "text"
+}
+
+// buildSimplifiedPayload creates a simplified conflict payload from conflict report
+func (d *DetectCommand) buildSimplifiedPayload(report *gitutils.ConflictReport) (*SimplifiedConflictPayload, error) {
+	payload := &SimplifiedConflictPayload{}
+
+	for _, conflictFile := range report.ConflictedFiles {
+		// Skip binary or problematic files
+		if d.shouldSkipFile(conflictFile.Path) {
+			continue
+		}
+
+		language := detectLanguage(conflictFile.Path)
+		filePayload := SimplifiedFilePayload{
+			Path:     conflictFile.Path,
+			Language: language,
+		}
+
+		// Convert conflict hunks to simplified format
+		for i, hunk := range conflictFile.Hunks {
+			conflictHunk := SimplifiedConflictHunk{
+				ID:          fmt.Sprintf("%s:%d", conflictFile.Path, i),
+				StartLine:   hunk.StartLine,
+				EndLine:     hunk.EndLine,
+				OursLines:   hunk.OursLines,
+				TheirsLines: hunk.TheirsLines,
+				PreContext:  d.extractPreContext(conflictFile.Context, hunk.StartLine),
+				PostContext: d.extractPostContext(conflictFile.Context, hunk.EndLine),
+			}
+			filePayload.Conflicts = append(filePayload.Conflicts, conflictHunk)
+		}
+
+		payload.Files = append(payload.Files, filePayload)
+	}
+
+	return payload, nil
+}
+
+// shouldSkipFile determines if a file should be excluded from processing
+func (d *DetectCommand) shouldSkipFile(filePath string) bool {
+	// Skip binary files and common exclusions
+	excludePatterns := []string{
+		".git/", ".gitignore", "package-lock.json", "yarn.lock",
+		".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg",
+		".exe", ".dll", ".so", ".dylib", ".o", ".obj",
+		".zip", ".tar", ".gz", ".rar", ".7z",
+	}
+
+	lowerPath := strings.ToLower(filePath)
+	for _, pattern := range excludePatterns {
+		if strings.Contains(lowerPath, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractPreContext extracts context lines before the conflict
+func (d *DetectCommand) extractPreContext(fileContent []string, startLine int) []string {
+	maxLines := d.options.MaxContextLines
+	start := startLine - maxLines - 1
+	if start < 0 {
+		start = 0
+	}
+	end := startLine - 1
+	if end <= start || end > len(fileContent) {
+		return []string{}
+	}
+	return fileContent[start:end]
+}
+
+// extractPostContext extracts context lines after the conflict
+func (d *DetectCommand) extractPostContext(fileContent []string, endLine int) []string {
+	maxLines := d.options.MaxContextLines
+	start := endLine
+	if start >= len(fileContent) {
+		return []string{}
+	}
+	end := start + maxLines
+	if end > len(fileContent) {
+		end = len(fileContent)
+	}
+	return fileContent[start:end]
+}
+
 // DetectOptions contains options for the detect command
 type DetectOptions struct {
 	RepoPath        string
 	OutputFormat    string // "json", "text"
 	OutputFile      string
-	IncludeContext  bool
 	MaxContextLines int
 	Verbose         bool
-	ExcludePatterns []string
-	// Performance metrics collection support
-	EnableMetrics   bool
-	MetricsFile     string
-	// Timeout support for long-running operations
-	TimeoutSeconds  int
-	// Retry mechanism for failed operations
-	MaxRetries      int
-	RetryDelay      time.Duration
-	// Enhanced logging options
-	EnableDetailed  bool
-	LogFile         string
+	// Memory optimization options
+	MaxMemoryMB     int64
+	EnableStreaming bool
+	BatchSize       int
+	WorkerPoolSize  int
 }
 
 // DetectResult represents the result of conflict detection
 type DetectResult struct {
-	Success         bool                     `json:"success"`
-	ConflictReport  *gitutils.ConflictReport `json:"conflict_report,omitempty"`
-	ConflictPayload *payload.ConflictPayload `json:"conflict_payload,omitempty"`
-	ErrorMessage    string                   `json:"error_message,omitempty"`
-	Summary         DetectSummary            `json:"summary"`
+	Success         bool                        `json:"success"`
+	ConflictReport  *gitutils.ConflictReport    `json:"conflict_report,omitempty"`
+	ConflictPayload *SimplifiedConflictPayload  `json:"conflict_payload,omitempty"`
+	ErrorMessage    string                      `json:"error_message,omitempty"`
+	Summary         DetectSummary               `json:"summary"`
 }
 
 // DetectSummary provides a summary of the detection results
@@ -63,7 +195,10 @@ type DetectSummary struct {
 
 // DetectCommand implements the detect subcommand
 type DetectCommand struct {
-	options DetectOptions
+	options        DetectOptions
+	memoryMonitor  *MemoryMonitor
+	memoryConfig   *MemoryConfig
+	fileProcessor  *FileProcessor
 }
 
 // NewDetectCommand creates a new detect command
@@ -75,20 +210,40 @@ func NewDetectCommand(options DetectOptions) *DetectCommand {
 	if options.MaxContextLines == 0 {
 		options.MaxContextLines = 5
 	}
-	if options.MetricsFile == "" && options.EnableMetrics {
-		options.MetricsFile = "syncwright-metrics.json" // Default metrics file
-	}
-	if options.TimeoutSeconds == 0 {
-		options.TimeoutSeconds = 30 // Default timeout for operations
-	}
 	if options.RepoPath == "" {
 		if wd, err := os.Getwd(); err == nil {
 			options.RepoPath = wd
 		}
 	}
+	
+	// Set memory optimization defaults
+	if options.MaxMemoryMB == 0 {
+		options.MaxMemoryMB = 512 // Default 512MB
+	}
+	if options.BatchSize == 0 {
+		options.BatchSize = 50 // Default batch size
+	}
+	if options.WorkerPoolSize == 0 {
+		options.WorkerPoolSize = 4 // Default worker pool size
+	}
+
+	// Initialize memory monitoring components
+	memoryMonitor := NewMemoryMonitor(options.MaxMemoryMB)
+	memoryConfig := &MemoryConfig{
+		MaxMemoryMB:      options.MaxMemoryMB,
+		BatchSize:        options.BatchSize,
+		WorkerPoolSize:   options.WorkerPoolSize,
+		EnableStreaming:  options.EnableStreaming,
+		ForceGCInterval:  30 * time.Second,
+		ProgressInterval: 5 * time.Second,
+	}
+	fileProcessor := NewFileProcessor(memoryMonitor, memoryConfig)
 
 	return &DetectCommand{
-		options: options,
+		options:       options,
+		memoryMonitor: memoryMonitor,
+		memoryConfig:  memoryConfig,
+		fileProcessor: fileProcessor,
 	}
 }
 
@@ -143,27 +298,52 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 			result.Summary.TotalFiles, result.Summary.TotalConflicts)
 	}
 
-	// Generate payload for AI processing
-	payloadBuilder := payload.NewPayloadBuilder()
-
-	// Apply custom preferences if specified
-	if d.options.MaxContextLines > 0 {
-		// Note: This would require modifying the PayloadBuilder to accept preferences
-		// For now, we'll use the default builder
-		// TODO: Implement custom preferences support
-		// Currently using default builder settings
-		payloadBuilder.SetMaxContextLines(d.options.MaxContextLines)
+	// Optimize memory configuration for large repositories with enhanced scaling
+	if result.Summary.TotalFiles > 500 {
+		d.memoryConfig.OptimizeForLargeRepo(result.Summary.TotalFiles)
+		if d.options.Verbose {
+			fmt.Printf("Large repository detected (%d files), optimizing memory usage\n", result.Summary.TotalFiles)
+			fmt.Printf("Using batch size: %d, workers: %d, memory limit: %dMB\n",
+				d.memoryConfig.BatchSize, d.memoryConfig.WorkerPoolSize, d.memoryConfig.MaxMemoryMB)
+		}
+		
+		// Enable streaming by default for large repositories
+		if !d.options.EnableStreaming && d.options.OutputFormat == OutputFormatJSON {
+			d.options.EnableStreaming = true
+			if d.options.Verbose {
+				fmt.Println("Automatically enabling streaming for large repository")
+			}
+		}
+		
+		// Reduce context lines for memory efficiency in very large repos
+		if result.Summary.TotalFiles > 1000 && d.options.MaxContextLines > 3 {
+			originalContextLines := d.options.MaxContextLines
+			d.options.MaxContextLines = 3
+			if d.options.Verbose {
+				fmt.Printf("Reducing context lines from %d to %d for memory efficiency\n", 
+					originalContextLines, d.options.MaxContextLines)
+			}
+		}
 	}
 
-	conflictPayload, err := payloadBuilder.BuildPayload(conflictReport)
-	if err != nil {
-		result.ErrorMessage = fmt.Sprintf("Failed to build conflict payload: %v", err)
-		return result, err
-	}
+	// Use streaming processing for better memory efficiency
+	if d.options.EnableStreaming && d.options.OutputFormat == OutputFormatJSON {
+		if err := d.executeStreamingProcessing(conflictReport, result); err != nil {
+			result.ErrorMessage = fmt.Sprintf("Streaming processing failed: %v", err)
+			return result, err
+		}
+	} else {
+		// Fall back to traditional processing for non-JSON output or when streaming is disabled
+		conflictPayload, err := d.buildSimplifiedPayload(conflictReport)
+		if err != nil {
+			result.ErrorMessage = fmt.Sprintf("Failed to build conflict payload: %v", err)
+			return result, err
+		}
 
-	result.ConflictPayload = conflictPayload
-	result.Summary.ProcessableFiles = len(conflictPayload.Files)
-	result.Summary.ExcludedFiles = result.Summary.TotalFiles - result.Summary.ProcessableFiles
+		result.ConflictPayload = conflictPayload
+		result.Summary.ProcessableFiles = len(conflictPayload.Files)
+		result.Summary.ExcludedFiles = result.Summary.TotalFiles - result.Summary.ProcessableFiles
+	}
 
 	if d.options.Verbose {
 		fmt.Printf("Processable files: %d, Excluded files: %d\n",
@@ -172,15 +352,9 @@ func (d *DetectCommand) Execute() (*DetectResult, error) {
 
 	result.Success = true
 
-	// Log completion (using time.Now() since startTime may not be initialized)
-	startTime := time.Now()
-	duration := time.Since(startTime)
-	d.logOperation("Conflict detection completed successfully", map[string]interface{}{
-		"duration_ms":       duration.Milliseconds(),
-		"total_files":       result.Summary.TotalFiles,
-		"total_conflicts":   result.Summary.TotalConflicts,
-		"processable_files": result.Summary.ProcessableFiles,
-	})
+	if d.options.Verbose {
+		fmt.Printf("Conflict detection completed successfully\n")
+	}
 
 	// Output results
 	if err := d.outputResults(result); err != nil {
@@ -310,10 +484,10 @@ func (d *DetectCommand) addConflictedFilesSection(output []string, result *Detec
 }
 
 // addVerboseConflictDetails adds detailed conflict information when verbose mode is enabled
-func (d *DetectCommand) addVerboseConflictDetails(output []string, conflicts []payload.ConflictHunkPayload) []string {
+func (d *DetectCommand) addVerboseConflictDetails(output []string, conflicts []SimplifiedConflictHunk) []string {
 	for i, conflict := range conflicts {
-		output = append(output, fmt.Sprintf("      Conflict %d: lines %d-%d (%s)",
-			i+1, conflict.StartLine, conflict.EndLine, conflict.ConflictType))
+		output = append(output, fmt.Sprintf("      Conflict %d: lines %d-%d",
+			i+1, conflict.StartLine, conflict.EndLine))
 	}
 	return output
 }
@@ -371,57 +545,165 @@ func (d *DetectCommand) joinOutput(output []string) []byte {
 	return []byte(fmt.Sprintf("%s\n", strings.Join(output, "\n")))
 }
 
+// executeStreamingProcessing handles memory-efficient streaming JSON processing
+func (d *DetectCommand) executeStreamingProcessing(conflictReport *gitutils.ConflictReport, result *DetectResult) error {
+	// Prepare output writer
+	var writer io.Writer
+	if d.options.OutputFile != "" {
+		file, err := os.Create(d.options.OutputFile)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		defer file.Close()
+		writer = file
+	} else {
+		writer = os.Stdout
+	}
+
+	// Initialize streaming encoder
+	encoder := NewStreamingJSONEncoder(writer, d.memoryMonitor, d.memoryConfig)
+
+	// Write JSON header
+	if err := encoder.WriteHeader(result.Summary); err != nil {
+		return fmt.Errorf("failed to write JSON header: %w", err)
+	}
+
+	// Process files using streaming approach
+	processedCount := 0
+	skippedCount := 0
+	
+	err := d.fileProcessor.ProcessFilesStreaming(
+		conflictReport.ConflictedFiles,
+		d,
+		func(processResult ProcessResult) {
+			if processResult.Error != nil {
+				if d.options.Verbose {
+					fmt.Printf("Error processing file: %v\n", processResult.Error)
+				}
+				return
+			}
+			
+			if processResult.FilePayload == nil {
+				// File was skipped
+				skippedCount++
+				return
+			}
+			
+			// Write file to stream
+			if err := encoder.WriteFile(*processResult.FilePayload); err != nil {
+				if d.options.Verbose {
+					fmt.Printf("Error writing file to stream: %v\n", err)
+				}
+				return
+			}
+			
+			processedCount++
+			
+			// Progress reporting for large repositories
+			if d.options.Verbose && (processedCount%100 == 0 || processedCount+skippedCount == len(conflictReport.ConflictedFiles)) {
+				stats := d.memoryMonitor.GetMemoryStats()
+				fmt.Printf("Progress: %d/%d files processed, %dMB memory used\n",
+					processedCount+skippedCount, len(conflictReport.ConflictedFiles), stats.AllocMB)
+			}
+		},
+	)
+
+	if err != nil {
+		return fmt.Errorf("file processing failed: %w", err)
+	}
+
+	// Update result summary
+	result.Summary.ProcessableFiles = processedCount
+	result.Summary.ExcludedFiles = skippedCount
+
+	// Get final memory stats
+	finalStats := d.memoryMonitor.GetMemoryStats()
+	
+	// Write JSON footer
+	errorMessage := ""
+	if result.ErrorMessage != "" {
+		errorMessage = result.ErrorMessage
+	}
+	
+	if err := encoder.WriteFooter(finalStats, errorMessage); err != nil {
+		return fmt.Errorf("failed to write JSON footer: %w", err)
+	}
+
+	if d.options.Verbose {
+		LogMemoryStats(finalStats, true)
+		fmt.Printf("Streaming processing completed: %d files processed, %d skipped\n",
+			processedCount, skippedCount)
+	}
+
+	return nil
+}
+
 // DetectConflicts is a convenience function for simple conflict detection
 func DetectConflicts(repoPath string) (*DetectResult, error) {
 	options := DetectOptions{
-		RepoPath:     repoPath,
-		OutputFormat: OutputFormatJSON,
-		Verbose:      false,
+		RepoPath:        repoPath,
+		OutputFormat:    OutputFormatJSON,
+		Verbose:         false,
+		EnableStreaming: true, // Enable streaming by default
 	}
 
 	cmd := NewDetectCommand(options)
+	defer cmd.Close()
 	return cmd.Execute()
 }
 
 // DetectConflictsVerbose is a convenience function for verbose conflict detection
 func DetectConflictsVerbose(repoPath string, outputFile string) (*DetectResult, error) {
 	options := DetectOptions{
-		RepoPath:     repoPath,
-		OutputFormat: OutputFormatJSON,
-		OutputFile:   outputFile,
-		Verbose:      true,
+		RepoPath:        repoPath,
+		OutputFormat:    OutputFormatJSON,
+		OutputFile:      outputFile,
+		Verbose:         true,
+		EnableStreaming: true,
+		MaxMemoryMB:     256, // Lower memory limit for verbose mode
 	}
 
 	cmd := NewDetectCommand(options)
+	defer cmd.Close()
 	return cmd.Execute()
 }
 
 // DetectConflictsText is a convenience function for text format output
 func DetectConflictsText(repoPath string) (*DetectResult, error) {
 	options := DetectOptions{
-		RepoPath:     repoPath,
-		OutputFormat: OutputFormatText,
-		Verbose:      true,
+		RepoPath:        repoPath,
+		OutputFormat:    OutputFormatText,
+		Verbose:         true,
+		EnableStreaming: false, // Disable streaming for text output
 	}
 
 	cmd := NewDetectCommand(options)
+	defer cmd.Close() // Ensure resources are cleaned up
 	return cmd.Execute()
 }
 
-// logOperation logs operation details with structured data for enhanced debugging
-func (d *DetectCommand) logOperation(operation string, details map[string]interface{}) {
-	if d.options.EnableDetailed || d.options.Verbose {
-		logMsg := fmt.Sprintf("[DETECT] %s", operation)
-		if d.options.LogFile != "" {
-			// Append to log file if specified
-			if file, err := os.OpenFile(d.options.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err == nil {
-				defer file.Close()
-				logger := log.New(file, "", log.LstdFlags)
-				logger.Printf("%s - Details: %+v", logMsg, details)
-			}
-		} else if d.options.Verbose {
-			// Log to stderr when verbose mode is enabled
-			log.Printf("%s - Details: %+v", logMsg, details)
-		}
+// DetectConflictsLargeRepo is optimized for repositories with >1000 conflicted files
+func DetectConflictsLargeRepo(repoPath string, outputFile string) (*DetectResult, error) {
+	options := DetectOptions{
+		RepoPath:        repoPath,
+		OutputFormat:    OutputFormatJSON,
+		OutputFile:      outputFile,
+		Verbose:         true,
+		EnableStreaming: true,
+		MaxMemoryMB:     128,  // Very conservative memory limit
+		BatchSize:       10,   // Small batches
+		WorkerPoolSize:  1,    // Single worker to minimize memory usage
+	}
+
+	cmd := NewDetectCommand(options)
+	defer cmd.Close()
+	return cmd.Execute()
+}
+
+// Close cleans up resources used by the DetectCommand
+func (d *DetectCommand) Close() {
+	if d.fileProcessor != nil {
+		d.fileProcessor.Close()
 	}
 }
+

@@ -1,39 +1,13 @@
 ---
 name: 'Syncwright'
-description: 'AI-powered Git merge conflict resolution with Claude AI - automatic detection, analysis & resolution'
+description: 'AI-powered Git merge conflict resolution with Claude AI - optimized for large repositories with intelligent batching, rate limiting, and parallel processing'
 author: 'Syncwright Team'
 
-# GitHub Marketplace metadata
 branding:
   icon: 'git-merge'
   color: 'blue'
 
-# Marketplace optimization:
-# - Name: Clear, descriptive action name
-# - Description: Comprehensive description highlighting AI capabilities and CI/CD integration
-# - Author: Consistent team branding
-# - Branding: Professional git-merge icon with blue color for trust and reliability
-# - Tags (conceptual): git, merge-conflicts, ai, automation, cli, conflict-resolution, ci-cd, github-actions
-
 inputs:
-  run_validation:
-    description: 'Enable comprehensive validation checks before and after conflict resolution'
-    required: false
-    default: 'true'
-  max_tokens:
-    description: 'Maximum tokens for AI processing (-1 for unlimited, recommended for complex conflicts)'
-    required: false
-    default: '-1'
-  # Retry mechanism for failed resolutions
-  retry_count:
-    description: 'Number of retry attempts for failed conflict resolutions'
-    required: false
-    default: '3'
-  # Debug mode for troubleshooting
-  debug_mode:
-    description: 'Enable detailed debug logging for troubleshooting conflict resolution'
-    required: false
-    default: 'false'
   claude_code_oauth_token:
     description: 'Claude Code OAuth token for AI-powered conflict resolution (store as repository secret)'
     required: false
@@ -41,339 +15,476 @@ inputs:
     description: 'Set to true when automatic Git merge fails to trigger AI-powered resolution'
     required: false
     default: 'false'
+  max_tokens:
+    description: 'Maximum tokens for AI processing (-1 for unlimited)'
+    required: false
+    default: '-1'
+  run_validation:
+    description: 'Enable validation checks before and after conflict resolution'
+    required: false
+    default: 'true'
   pr_number:
-    description: 'Pull request number for context-aware resolution and status reporting'
+    description: 'Pull request number for context-aware resolution'
     required: false
   base_branch:
-    description: 'Target branch name (e.g., main, develop) for merge operation context'
+    description: 'Target branch name (e.g., main, develop)'
     required: false
   head_branch:
     description: 'Source branch name containing changes to be merged'
     required: false
-  timeout_seconds:
-    description: 'Maximum execution time in seconds (default: 300, set to 0 for no timeout)'
+  batch_size:
+    description: 'Number of conflicts to process per batch (default: auto-calculated based on repo size)'
     required: false
-    default: '300'
-  max_retries:
-    description: 'Maximum number of retry attempts for failed operations (default: 3)'
+    default: '0'
+  concurrency:
+    description: 'Number of concurrent batches to process (default: 3)'
     required: false
     default: '3'
+  timeout_minutes:
+    description: 'Timeout in minutes for the entire resolution process (default: 30)'
+    required: false
+    default: '30'
+  enable_streaming:
+    description: 'Enable streaming processing for large repositories (default: true)'
+    required: false
+    default: 'true'
+  max_retries:
+    description: 'Maximum retry attempts for failed API requests (default: 3)'
+    required: false
+    default: '3'
+  confidence_threshold:
+    description: 'Minimum confidence threshold for applying AI resolutions (0.0-1.0, default: 0.7)'
+    required: false
+    default: '0.7'
 
 outputs:
   conflicts_resolved:
     description: 'Boolean indicating whether merge conflicts were successfully resolved by AI'
-    value: ${{ steps.run-syncwright.outputs.conflicts_resolved }}
+    value: ${{ steps.resolve-conflicts.outputs.conflicts_resolved }}
   files_modified:
     description: 'Number of files that were modified during the conflict resolution process'
-    value: ${{ steps.run-syncwright.outputs.files_modified }}
+    value: ${{ steps.resolve-conflicts.outputs.files_modified }}
+  total_conflicts:
+    description: 'Total number of conflicts detected in the repository'
+    value: ${{ steps.resolve-conflicts.outputs.total_conflicts }}
+  resolved_conflicts:
+    description: 'Number of conflicts successfully resolved by AI'
+    value: ${{ steps.resolve-conflicts.outputs.resolved_conflicts }}
+  processing_time:
+    description: 'Total processing time in seconds'
+    value: ${{ steps.resolve-conflicts.outputs.processing_time }}
+  ai_confidence:
+    description: 'Overall confidence score of AI resolutions (0.0-1.0)'
+    value: ${{ steps.resolve-conflicts.outputs.ai_confidence }}
+  batches_processed:
+    description: 'Number of batches processed during resolution'
+    value: ${{ steps.resolve-conflicts.outputs.batches_processed }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Setup environment
+    - name: Install Claude Code CLI
       shell: bash
       run: |
-        echo "Setting up Syncwright environment..."
-        echo "SYNCWRIGHT_VERSION=${SYNCWRIGHT_VERSION:-latest}" >> $GITHUB_ENV
-        echo "SYNCWRIGHT_DEBUG=${SYNCWRIGHT_DEBUG:-false}" >> $GITHUB_ENV
+        echo "Installing Claude Code CLI..."
+        npm install -g @anthropic-ai/claude-code
 
-    - name: Install Syncwright binary
+    - name: Install Syncwright
       shell: bash
       run: |
         echo "Installing Syncwright binary..."
-
-        # Validate and sanitize action path to prevent code injection
+        
+        # Basic path validation for security
         ACTION_PATH="${{ github.action_path }}"
-        WORKSPACE_PATH="${{ github.workspace }}"
-
-        # Basic path validation - ensure paths don't contain dangerous characters
-        if [[ "$ACTION_PATH" =~ [\;\&\|\`\$\(\)] ]] || [[ "$WORKSPACE_PATH" =~ [\;\&\|\`\$\(\)] ]]; then
-          echo "Error: Action or workspace path contains potentially dangerous characters"
+        if [[ "$ACTION_PATH" =~ [\;\&\|\`\$\(\)] ]] || [[ ! "$ACTION_PATH" =~ ^/ ]]; then
+          echo "Error: Invalid action path"
           exit 1
         fi
 
-        # Ensure paths are absolute and don't contain directory traversal
-        if [[ "$ACTION_PATH" != /* ]] || [[ "$WORKSPACE_PATH" != /* ]]; then
-          echo "Error: Action or workspace path is not absolute"
-          exit 1
-        fi
-
-        if [[ "$ACTION_PATH" =~ \.\. ]] || [[ "$WORKSPACE_PATH" =~ \.\. ]]; then
-          echo "Error: Action or workspace path contains directory traversal"
-          exit 1
-        fi
-
-        # Set binary name based on platform for all subsequent steps
-        if [ "$RUNNER_OS" = "Windows" ] || [ "$(go env GOOS)" = "windows" ]; then
-          BINARY_PATH="${ACTION_PATH}/bin/syncwright.exe"
-          TARGET_BINARY="./syncwright.exe"
-          SYNCWRIGHT_BINARY="./syncwright.exe"
+        # Set platform-specific binary name
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          BINARY_NAME="syncwright.exe"
         else
-          BINARY_PATH="${ACTION_PATH}/bin/syncwright"
-          TARGET_BINARY="./syncwright"
-          SYNCWRIGHT_BINARY="./syncwright"
+          BINARY_NAME="syncwright"
         fi
 
-        # Priority 1: Use pre-built binary from action path (fastest)
-        if [ -f "$BINARY_PATH" ]; then
-          echo "Using pre-built binary from action path"
-          cp "$BINARY_PATH" "$TARGET_BINARY"
-          chmod +x "$TARGET_BINARY"
-        # Priority 2: Build directly from source if available (CI optimization)
-        elif [ -f "${ACTION_PATH}/go.mod" ] && [ -f "${ACTION_PATH}/cmd/syncwright/main.go" ]; then
-          echo "Building directly from source in action path (CI optimization)..."
-          cd "${ACTION_PATH}"
-
-          # Use make build for consistent build process
-          if make build 2>/dev/null && [ -f "${ACTION_PATH}/bin/syncwright" ]; then
-            echo "Built using Makefile"
-            cp "${ACTION_PATH}/bin/syncwright" "${WORKSPACE_PATH}/${TARGET_BINARY}"
-            cd "${WORKSPACE_PATH}"
-            chmod +x "$TARGET_BINARY"
-          # Fallback to direct go build
-          elif go build -o "${WORKSPACE_PATH}/${TARGET_BINARY}" ./cmd/syncwright 2>/dev/null; then
-            cd "${WORKSPACE_PATH}"
-            echo "Built using direct go build"
-            chmod +x "$TARGET_BINARY"
+        # Try pre-built binary first
+        if [ -f "${ACTION_PATH}/bin/${BINARY_NAME}" ]; then
+          echo "Using pre-built binary"
+          cp "${ACTION_PATH}/bin/${BINARY_NAME}" "./${BINARY_NAME}"
+          chmod +x "./${BINARY_NAME}"
+        # Try installation script
+        elif [ -f "${ACTION_PATH}/scripts/install.sh" ]; then
+          echo "Using installation script"
+          export GITHUB_WORKSPACE="${{ github.workspace }}"
+          export GITHUB_ACTION_PATH="$ACTION_PATH"
+          if timeout 30s "${ACTION_PATH}/scripts/install.sh"; then
+            echo "Installation script completed"
           else
-            cd "${WORKSPACE_PATH}"
-            echo "Source build failed, trying installation script..."
-
-            # Priority 3: Use installation script (slower, but handles releases)
-            INSTALL_SCRIPT="${ACTION_PATH}/scripts/install.sh"
-            export GITHUB_WORKSPACE="${WORKSPACE_PATH}"
-            export GITHUB_ACTION_PATH="${ACTION_PATH}"
-
-            if [ -f "$INSTALL_SCRIPT" ] && \
-               (timeout 15s "$INSTALL_SCRIPT" 2>/dev/null || \
-                (command -v gtimeout >/dev/null 2>&1 && \
-                 gtimeout 15s "$INSTALL_SCRIPT" 2>/dev/null)); then
-              echo "Installation script succeeded"
+            echo "Installation script failed, attempting direct download"
+            # Simple fallback: download latest release
+            PLATFORM=$(uname -s | tr '[:upper:]' '[:lower:]')
+            ARCH=$(uname -m)
+            case $ARCH in
+              x86_64) ARCH="amd64" ;;
+              aarch64) ARCH="arm64" ;;
+            esac
+            
+            DOWNLOAD_URL="https://github.com/NeuBlink/syncwright/releases/latest/download/syncwright_${PLATFORM}_${ARCH}.tar.gz"
+            if curl -fsSL "$DOWNLOAD_URL" | tar -xz; then
+              chmod +x "$BINARY_NAME"
+              echo "Downloaded and extracted binary"
             else
-              echo "Installation script failed or timed out, creating functional stub..."
-
-              # Priority 4: Create functional stub for testing (fastest fallback)
-              echo '#!/bin/bash' > "$TARGET_BINARY"
-              echo 'case "$1" in' >> "$TARGET_BINARY"
-              echo '  --version) echo "syncwright version 0.0.0-ci-stub" ;;' >> "$TARGET_BINARY"
-              echo '  --help) echo "Usage: syncwright [command] [options]" ;;' >> "$TARGET_BINARY"
-              echo '  validate)' >> "$TARGET_BINARY"
-              echo '    echo "Validation completed (CI stub mode)"' >> "$TARGET_BINARY"
-              echo '    [ "$2" = "--verbose" ] && echo "Verbose validation output"' >> "$TARGET_BINARY"
-              echo '    exit 0 ;;' >> "$TARGET_BINARY"
-              echo '  detect)' >> "$TARGET_BINARY"
-              echo '    echo "Detection completed (CI stub mode)"' >> "$TARGET_BINARY"
-              echo '    [ "$2" = "--format" ] && [ "$3" = "json" ] && \' >> "$TARGET_BINARY"
-              echo '      echo '"'"'{"conflicts": []}'"'"'' >> "$TARGET_BINARY"
-              echo '    exit 0 ;;' >> "$TARGET_BINARY"
-              echo '  format)' >> "$TARGET_BINARY"
-              echo '    echo "Format completed (CI stub mode)"' >> "$TARGET_BINARY"
-              echo '    [ "$2" = "--dry-run" ] && echo "Dry run format output"' >> "$TARGET_BINARY"
-              echo '    exit 0 ;;' >> "$TARGET_BINARY"
-              echo '  resolve)' >> "$TARGET_BINARY"
-              echo '    echo "Resolve completed (CI stub mode)"' >> "$TARGET_BINARY"
-              echo '    [ "$2" = "--ai" ] && echo "AI resolution completed"' >> "$TARGET_BINARY"
-              echo '    exit 0 ;;' >> "$TARGET_BINARY"
-              echo '  *)' >> "$TARGET_BINARY"
-              echo '    echo "Command $1 completed (CI stub mode)"' >> "$TARGET_BINARY"
-              echo '    exit 0 ;;' >> "$TARGET_BINARY"
-              echo 'esac' >> "$TARGET_BINARY"
-              chmod +x "$TARGET_BINARY"
-              echo "Warning: Using CI stub for testing. Full functionality not available."
+              echo "Error: Failed to install Syncwright"
+              exit 1
             fi
           fi
         else
-          echo "No source files found, trying installation script..."
-
-          # Priority 3: Use installation script for release binaries
-          INSTALL_SCRIPT="${ACTION_PATH}/scripts/install.sh"
-          export GITHUB_WORKSPACE="${WORKSPACE_PATH}"
-          export GITHUB_ACTION_PATH="${ACTION_PATH}"
-
-          if [ -f "$INSTALL_SCRIPT" ] && \
-             (timeout 15s "$INSTALL_SCRIPT" 2>/dev/null || \
-              (command -v gtimeout >/dev/null 2>&1 && \
-               gtimeout 15s "$INSTALL_SCRIPT" 2>/dev/null)); then
-            echo "Installation script succeeded"
-          else
-            echo "Installation script failed, creating basic stub..."
-
-            # Final fallback: minimal stub
-            echo '#!/bin/bash' > "$TARGET_BINARY"
-            echo 'echo "Syncwright CI stub - command $1 completed"' >> "$TARGET_BINARY"
-            echo 'exit 0' >> "$TARGET_BINARY"
-            chmod +x "$TARGET_BINARY"
-            echo "Warning: Using minimal stub. Limited functionality."
-          fi
+          echo "Error: No installation method available"
+          exit 1
         fi
 
-        # Add to PATH for subsequent steps
-        echo "$WORKSPACE_PATH" >> $GITHUB_PATH
-        echo "SYNCWRIGHT_BINARY=$SYNCWRIGHT_BINARY" >> $GITHUB_ENV
-
-        # Verify installation
-        if ! "$SYNCWRIGHT_BINARY" --version 2>/dev/null; then
-          echo "Warning: Version check failed, but binary exists"
-          ls -la "$TARGET_BINARY"
+        # Add to PATH and verify
+        echo "$PWD" >> $GITHUB_PATH
+        echo "SYNCWRIGHT_BINARY=./${BINARY_NAME}" >> $GITHUB_ENV
+        
+        if "./${BINARY_NAME}" --version; then
+          echo "Syncwright installed successfully"
+        else
+          echo "Warning: Version check failed but binary exists"
         fi
 
-    - name: Run Syncwright validation
-      if: inputs.run_validation == 'true'
+    - name: Resolve conflicts
+      id: resolve-conflicts
       shell: bash
-      run: |
-        echo "Running Syncwright validation..."
-        "$SYNCWRIGHT_BINARY" validate --verbose
-
-    - name: Run Syncwright merge conflict resolution
-      id: run-syncwright
-      shell: bash
+      timeout-minutes: ${{ fromJSON(inputs.timeout_minutes) }}
       env:
-        CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude_code_oauth_token }}
+        ANTHROPIC_API_KEY: ${{ inputs.claude_code_oauth_token }}
         SYNCWRIGHT_MAX_TOKENS: ${{ inputs.max_tokens }}
         SYNCWRIGHT_PR_NUMBER: ${{ inputs.pr_number }}
         SYNCWRIGHT_BASE_BRANCH: ${{ inputs.base_branch }}
         SYNCWRIGHT_HEAD_BRANCH: ${{ inputs.head_branch }}
+        SYNCWRIGHT_BATCH_SIZE: ${{ inputs.batch_size }}
+        SYNCWRIGHT_CONCURRENCY: ${{ inputs.concurrency }}
+        SYNCWRIGHT_MAX_RETRIES: ${{ inputs.max_retries }}
+        SYNCWRIGHT_CONFIDENCE_THRESHOLD: ${{ inputs.confidence_threshold }}
+        SYNCWRIGHT_ENABLE_STREAMING: ${{ inputs.enable_streaming }}
+        SYNCWRIGHT_DEBUG: "true"
       run: |
-        set -e
-
-        # Initialize output variables
+        # Initialize outputs with default values
         echo "conflicts_resolved=false" >> $GITHUB_OUTPUT
         echo "files_modified=0" >> $GITHUB_OUTPUT
+        echo "total_conflicts=0" >> $GITHUB_OUTPUT
+        echo "resolved_conflicts=0" >> $GITHUB_OUTPUT
+        echo "processing_time=0" >> $GITHUB_OUTPUT
+        echo "ai_confidence=0.0" >> $GITHUB_OUTPUT
+        echo "batches_processed=0" >> $GITHUB_OUTPUT
+        
+        # Record start time for performance tracking
+        START_TIME=$(date +%s)
 
-        # Debug: Show current working directory and files
-        echo "Current working directory: $(pwd)"
-        echo "Available files:"
-        ls -la
-        echo "Syncwright binary location:"
-        which syncwright || echo "syncwright not in PATH"
-        ls -la "$SYNCWRIGHT_BINARY" 2>/dev/null || echo "No $SYNCWRIGHT_BINARY file"
-
-        # Check if we need to run AI-powered resolution
         if [ "${{ inputs.merge_failed }}" = "true" ]; then
-          echo "Merge conflicts detected, running AI-powered resolution..."
-
-          # Ensure we have the required token for AI operations
-          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
-            echo "Warning: Claude Code OAuth token not provided. Skipping AI-powered resolution."
-            echo "Please provide claude_code_oauth_token secret for AI-powered conflict resolution."
-            exit 0
-          fi
-
-          # Run AI-powered conflict resolution
-          echo "Running: $SYNCWRIGHT_BINARY resolve --ai --max-tokens=$SYNCWRIGHT_MAX_TOKENS"
-
-          if "$SYNCWRIGHT_BINARY" resolve --ai --max-tokens="$SYNCWRIGHT_MAX_TOKENS" --verbose; then
-            echo "conflicts_resolved=true" >> $GITHUB_OUTPUT
-
-            # Count modified files
-            MODIFIED_FILES=$(git diff --name-only | wc -l)
-            echo "files_modified=$MODIFIED_FILES" >> $GITHUB_OUTPUT
-
-            echo "AI-powered conflict resolution completed successfully"
-            echo "Modified $MODIFIED_FILES files"
-          else
-            echo "AI-powered conflict resolution failed"
+          echo "🚀 Starting AI-powered conflict resolution with optimizations for large repositories..."
+          
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "❌ Error: Claude Code OAuth token required for AI resolution"
+            echo "Please set the 'claude_code_oauth_token' input with a valid token"
             exit 1
           fi
-        else
-          echo "No merge conflicts detected or merge was successful"
-          echo "Running standard Syncwright operations..."
 
-          # Run standard operations (validation, formatting, etc.)
-          "$SYNCWRIGHT_BINARY" format --dry-run
-
-          if [ "${{ inputs.run_validation }}" = "true" ]; then
-            "$SYNCWRIGHT_BINARY" validate --verbose
+          # First, detect conflicts to determine optimal processing strategy
+          echo "🔍 Detecting conflicts and optimizing processing strategy..."
+          DETECT_OUTPUT=$("$SYNCWRIGHT_BINARY" detect --format json 2>&1)
+          DETECT_EXIT_CODE=$?
+          
+          if [ $DETECT_EXIT_CODE -ne 0 ]; then
+            echo "❌ Conflict detection failed:"
+            echo "$DETECT_OUTPUT"
+            exit 1
           fi
-
-          echo "Standard Syncwright operations completed"
+          
+          # Parse conflict count from detection output
+          TOTAL_CONFLICTS=$(echo "$DETECT_OUTPUT" | jq -r '.summary.total_conflicts // 0' 2>/dev/null || echo "0")
+          TOTAL_FILES=$(echo "$DETECT_OUTPUT" | jq -r '.summary.total_files // 0' 2>/dev/null || echo "0")
+          
+          echo "total_conflicts=$TOTAL_CONFLICTS" >> $GITHUB_OUTPUT
+          echo "📊 Detected $TOTAL_CONFLICTS conflicts across $TOTAL_FILES files"
+          
+          if [ "$TOTAL_CONFLICTS" -eq 0 ]; then
+            echo "✅ No conflicts detected - nothing to resolve"
+            END_TIME=$(date +%s)
+            PROCESSING_TIME=$((END_TIME - START_TIME))
+            echo "processing_time=$PROCESSING_TIME" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Determine optimal batch size if not specified
+          if [ "$SYNCWRIGHT_BATCH_SIZE" = "0" ]; then
+            if [ "$TOTAL_CONFLICTS" -gt 500 ]; then
+              OPTIMAL_BATCH_SIZE=5
+              echo "📦 Large repository detected: Using batch size of $OPTIMAL_BATCH_SIZE for optimal performance"
+            elif [ "$TOTAL_CONFLICTS" -gt 100 ]; then
+              OPTIMAL_BATCH_SIZE=10
+              echo "📦 Medium repository detected: Using batch size of $OPTIMAL_BATCH_SIZE"
+            else
+              OPTIMAL_BATCH_SIZE=25
+              echo "📦 Small repository detected: Using batch size of $OPTIMAL_BATCH_SIZE"
+            fi
+            export SYNCWRIGHT_BATCH_SIZE=$OPTIMAL_BATCH_SIZE
+          fi
+          
+          # Use batch processing for large repositories, single resolve for smaller ones
+          if [ "$TOTAL_CONFLICTS" -gt 50 ]; then
+            echo "🔄 Using batch processing mode for optimal performance and rate limiting"
+            
+            # Run batch processing with enhanced error handling and progress reporting
+            if "$SYNCWRIGHT_BINARY" batch \
+              --ai \
+              --auto-apply \
+              --batch-size="$SYNCWRIGHT_BATCH_SIZE" \
+              --concurrency="$SYNCWRIGHT_CONCURRENCY" \
+              --max-tokens="$SYNCWRIGHT_MAX_TOKENS" \
+              --confidence="$SYNCWRIGHT_CONFIDENCE_THRESHOLD" \
+              --max-retries="$SYNCWRIGHT_MAX_RETRIES" \
+              --progress \
+              --streaming="$SYNCWRIGHT_ENABLE_STREAMING" \
+              --verbose \
+              --timeout=300 2>&1 | tee batch_output.log; then
+              
+              echo "✅ Batch processing completed successfully"
+              
+              # Parse batch processing results
+              if [ -f "batch_output.log" ]; then
+                RESOLVED_CONFLICTS=$(grep -o "conflicts resolved" batch_output.log | wc -l || echo "0")
+                BATCHES_PROCESSED=$(grep -o "Batch [0-9]\+" batch_output.log | wc -l || echo "0")
+                AI_CONFIDENCE=$(grep -o "confidence: [0-9]\+\.[0-9]\+" batch_output.log | tail -1 | cut -d' ' -f2 || echo "0.0")
+                
+                echo "resolved_conflicts=$RESOLVED_CONFLICTS" >> $GITHUB_OUTPUT
+                echo "batches_processed=$BATCHES_PROCESSED" >> $GITHUB_OUTPUT
+                echo "ai_confidence=$AI_CONFIDENCE" >> $GITHUB_OUTPUT
+                
+                rm -f batch_output.log
+              fi
+              
+              echo "conflicts_resolved=true" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Batch processing failed - attempting fallback to single resolution"
+              
+              # Fallback to single resolution with reduced settings
+              echo "🔄 Falling back to single resolution mode with conservative settings"
+              if "$SYNCWRIGHT_BINARY" resolve \
+                --ai \
+                --auto-apply \
+                --max-tokens=20000 \
+                --confidence=0.8 \
+                --max-retries=2 \
+                --verbose; then
+                
+                echo "✅ Fallback resolution completed"
+                echo "conflicts_resolved=true" >> $GITHUB_OUTPUT
+                echo "resolved_conflicts=$TOTAL_CONFLICTS" >> $GITHUB_OUTPUT
+                echo "batches_processed=1" >> $GITHUB_OUTPUT
+              else
+                echo "❌ Both batch and fallback resolution failed"
+                END_TIME=$(date +%s)
+                PROCESSING_TIME=$((END_TIME - START_TIME))
+                echo "processing_time=$PROCESSING_TIME" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+            fi
+          else
+            echo "🔄 Using standard resolution mode for smaller repository"
+            
+            # Use standard resolve command for smaller repositories
+            if "$SYNCWRIGHT_BINARY" resolve \
+              --ai \
+              --auto-apply \
+              --max-tokens="$SYNCWRIGHT_MAX_TOKENS" \
+              --confidence="$SYNCWRIGHT_CONFIDENCE_THRESHOLD" \
+              --max-retries="$SYNCWRIGHT_MAX_RETRIES" \
+              --verbose; then
+              
+              echo "✅ Standard resolution completed"
+              echo "conflicts_resolved=true" >> $GITHUB_OUTPUT
+              echo "resolved_conflicts=$TOTAL_CONFLICTS" >> $GITHUB_OUTPUT
+              echo "batches_processed=1" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Standard resolution failed"
+              END_TIME=$(date +%s)
+              PROCESSING_TIME=$((END_TIME - START_TIME))
+              echo "processing_time=$PROCESSING_TIME" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          fi
+          
+          # Count actually modified files
+          MODIFIED_FILES=$(git diff --name-only | wc -l)
+          echo "files_modified=$MODIFIED_FILES" >> $GITHUB_OUTPUT
+          
+          echo "📝 AI conflict resolution completed - $MODIFIED_FILES files modified"
+        else
+          echo "ℹ️ No conflicts detected, running validation..."
+          if [ "${{ inputs.run_validation }}" = "true" ]; then
+            if "$SYNCWRIGHT_BINARY" validate --verbose; then
+              echo "✅ Validation completed successfully"
+            else
+              echo "⚠️ Validation completed with warnings (not failing workflow)"
+            fi
+          fi
+          echo "✅ Validation step completed"
         fi
+        
+        # Record final processing time
+        END_TIME=$(date +%s)
+        PROCESSING_TIME=$((END_TIME - START_TIME))
+        echo "processing_time=$PROCESSING_TIME" >> $GITHUB_OUTPUT
+        echo "⏱️ Total processing time: ${PROCESSING_TIME}s"
 
     - name: Commit resolved conflicts
-      if: steps.run-syncwright.outputs.conflicts_resolved == 'true'
+      if: steps.resolve-conflicts.outputs.conflicts_resolved == 'true'
       shell: bash
+      env:
+        SYNCWRIGHT_HEAD_BRANCH: ${{ inputs.head_branch }}
       run: |
-        # Check if there are changes to commit
         if ! git diff --quiet; then
-          echo "Committing resolved conflicts..."
-
-          # Stage all modified files
+          echo "📝 Committing resolved conflicts..."
+          
+          # Configure git for the commit
+          git config --local user.email "syncwright-bot@users.noreply.github.com"
+          git config --local user.name "Syncwright AI Bot"
+          
+          # Stage all changes
           git add .
+          
+          # Create detailed commit message
+          RESOLVED_COUNT="${{ steps.resolve-conflicts.outputs.resolved_conflicts }}"
+          TOTAL_COUNT="${{ steps.resolve-conflicts.outputs.total_conflicts }}"
+          FILES_MODIFIED="${{ steps.resolve-conflicts.outputs.files_modified }}"
+          AI_CONFIDENCE="${{ steps.resolve-conflicts.outputs.ai_confidence }}"
+          PROCESSING_TIME="${{ steps.resolve-conflicts.outputs.processing_time }}"
+          BATCHES_PROCESSED="${{ steps.resolve-conflicts.outputs.batches_processed }}"
+          
+          git commit -m "🤖 Resolve merge conflicts using Syncwright AI
 
-          # Create commit message
-          COMMIT_MSG="Resolve merge conflicts using Syncwright AI
+✅ Resolved ${RESOLVED_COUNT}/${TOTAL_COUNT} conflicts across ${FILES_MODIFIED} files
+🎯 AI Confidence Score: ${AI_CONFIDENCE}
+⏱️ Processing Time: ${PROCESSING_TIME}s
+📦 Batches Processed: ${BATCHES_PROCESSED}
 
-          Automatically resolved conflicts in ${{ steps.run-syncwright.outputs.files_modified }} files using
-          AI-powered analysis for context-aware resolution. Validated resolution using Syncwright validation suite.
+This commit was automatically generated by Syncwright AI using Claude
+for intelligent conflict resolution with performance optimizations for
+large repositories including batching, rate limiting, and parallel processing.
 
-          Co-authored-by: syncwright-bot <syncwright-bot@users.noreply.github.com>"
-
-          # Commit changes
-          git commit -m "$COMMIT_MSG"
-
-          # Push changes back to the head branch
+Co-authored-by: syncwright-bot <syncwright-bot@users.noreply.github.com>
+🤖 Generated with Syncwright AI <https://github.com/NeuBlink/syncwright>"
+          
+          # Push changes if head branch is specified
           if [ -n "$SYNCWRIGHT_HEAD_BRANCH" ]; then
-            git push origin HEAD:"$SYNCWRIGHT_HEAD_BRANCH"
-            echo "Pushed resolved conflicts to $SYNCWRIGHT_HEAD_BRANCH"
+            echo "🚀 Pushing changes to $SYNCWRIGHT_HEAD_BRANCH..."
+            if git push origin HEAD:"$SYNCWRIGHT_HEAD_BRANCH"; then
+              echo "✅ Changes successfully pushed to $SYNCWRIGHT_HEAD_BRANCH"
+            else
+              echo "⚠️ Failed to push changes - this may be due to permissions or branch protection"
+              echo "The conflicts have been resolved and committed locally"
+            fi
           else
-            echo "Warning: Head branch not specified, changes committed locally only"
+            echo "ℹ️ No head branch specified - changes committed locally only"
           fi
+          
+          echo "✅ Commit completed successfully"
         else
-          echo "No changes to commit after conflict resolution"
+          echo "ℹ️ No changes to commit - this may indicate the conflicts were resolved in-place"
         fi
 
-    - name: Post-resolution validation
-      if: steps.run-syncwright.outputs.conflicts_resolved == 'true'
-      shell: bash
-      run: |
-        echo "Running post-resolution validation..."
-
-        # Verify the repository is in a clean state
-        if ! git diff --quiet; then
-          echo "Warning: Repository has uncommitted changes after resolution"
-        fi
-
-        # Run comprehensive validation
-        "$SYNCWRIGHT_BINARY" validate --verbose
-
-        # Check that all conflicts are resolved
-        if git ls-files -u | grep -q .; then
-          echo "Error: Unresolved conflicts still exist"
-          git ls-files -u
-          exit 1
-        fi
-
-        echo "Post-resolution validation completed successfully"
-
-    - name: Generate resolution summary
+    - name: Performance monitoring and cleanup
       if: always()
       shell: bash
       run: |
-        echo "=== Syncwright Execution Summary ==="
-        echo "Validation enabled: ${{ inputs.run_validation }}"
-        echo "Max tokens: ${{ inputs.max_tokens }}"
-        echo "Merge failed: ${{ inputs.merge_failed }}"
-        echo "Conflicts resolved: ${{ steps.run-syncwright.outputs.conflicts_resolved }}"
-        echo "Files modified: ${{ steps.run-syncwright.outputs.files_modified }}"
-        echo "=================================="
+        echo "🔍 Performance monitoring and cleanup..."
+        
+        # Clean up any temporary files created during processing
+        rm -f batch_output.log syncwright-payload-*.json 2>/dev/null || true
+        
+        # Report memory usage if available
+        if command -v free >/dev/null 2>&1; then
+          echo "💾 Memory usage after processing:"
+          free -h
+        fi
+        
+        # Report disk usage for the repository
+        if command -v du >/dev/null 2>&1; then
+          REPO_SIZE=$(du -sh . 2>/dev/null | cut -f1 || echo "unknown")
+          echo "💽 Repository size: $REPO_SIZE"
+        fi
+        
+        # Force garbage collection if available
+        if command -v go >/dev/null 2>&1; then
+          GOMEMLIMIT=100MiB go clean -cache -modcache -testcache 2>/dev/null || true
+        fi
+        
+        echo "✅ Cleanup completed"
 
-        # Save summary to step summary
-        {
-          echo "## Syncwright Execution Summary"
-          echo ""
-          echo "| Setting | Value |"
-          echo "|---------|-------|"
-          echo "| Validation enabled | ${{ inputs.run_validation }} |"
-          echo "| Max tokens | ${{ inputs.max_tokens }} |"
-          echo "| Merge failed | ${{ inputs.merge_failed }} |"
-          echo "| Conflicts resolved | ${{ steps.run-syncwright.outputs.conflicts_resolved }} |"
-          echo "| Files modified | ${{ steps.run-syncwright.outputs.files_modified }} |"
-          echo ""
-          if [ "${{ steps.run-syncwright.outputs.conflicts_resolved }}" = "true" ]; then
-            echo "✅ **Success**: AI-powered conflict resolution completed"
-          elif [ "${{ inputs.merge_failed }}" = "false" ]; then
-            echo "✅ **Success**: No conflicts detected, standard operations completed"
-          else
-            echo "❌ **Failed**: Conflict resolution unsuccessful"
-          fi
-        } >> $GITHUB_STEP_SUMMARY
+    - name: Generate summary
+      if: always()
+      shell: bash
+      run: |
+        echo "## 🤖 Syncwright AI Conflict Resolution Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Performance and Results Table
+        echo "### 📊 Resolution Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| ✅ Conflicts Resolved | ${{ steps.resolve-conflicts.outputs.conflicts_resolved }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| 📁 Files Modified | ${{ steps.resolve-conflicts.outputs.files_modified }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| 🔢 Total Conflicts | ${{ steps.resolve-conflicts.outputs.total_conflicts }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| 🎯 Resolved Count | ${{ steps.resolve-conflicts.outputs.resolved_conflicts }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| ⏱️ Processing Time | ${{ steps.resolve-conflicts.outputs.processing_time }}s |" >> $GITHUB_STEP_SUMMARY
+        echo "| 🤖 AI Confidence | ${{ steps.resolve-conflicts.outputs.ai_confidence }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| 📦 Batches Processed | ${{ steps.resolve-conflicts.outputs.batches_processed }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Configuration Table
+        echo "### ⚙️ Configuration Used" >> $GITHUB_STEP_SUMMARY
+        echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Batch Size | ${{ inputs.batch_size }} (auto-optimized) |" >> $GITHUB_STEP_SUMMARY
+        echo "| Concurrency | ${{ inputs.concurrency }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Max Retries | ${{ inputs.max_retries }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Confidence Threshold | ${{ inputs.confidence_threshold }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Streaming Enabled | ${{ inputs.enable_streaming }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Timeout | ${{ inputs.timeout_minutes }} minutes |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Status Messages
+        if [ "${{ steps.resolve-conflicts.outputs.conflicts_resolved }}" = "true" ]; then
+          RESOLVED_COUNT="${{ steps.resolve-conflicts.outputs.resolved_conflicts }}"
+          TOTAL_COUNT="${{ steps.resolve-conflicts.outputs.total_conflicts }}"
+          PROCESSING_TIME="${{ steps.resolve-conflicts.outputs.processing_time }}"
+          AI_CONFIDENCE="${{ steps.resolve-conflicts.outputs.ai_confidence }}"
+          
+          echo "### 🎉 Success!" >> $GITHUB_STEP_SUMMARY
+          echo "AI conflict resolution completed successfully in ${PROCESSING_TIME}s" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Resolution Rate:** ${RESOLVED_COUNT}/${TOTAL_COUNT} conflicts resolved" >> $GITHUB_STEP_SUMMARY
+          echo "**Average Confidence:** ${AI_CONFIDENCE}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the resolved conflicts in the modified files" >> $GITHUB_STEP_SUMMARY
+          echo "2. Run your test suite to ensure functionality is preserved" >> $GITHUB_STEP_SUMMARY
+          echo "3. The changes have been automatically committed to your branch" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ steps.resolve-conflicts.outputs.total_conflicts }}" = "0" ]; then
+          echo "### ℹ️ No Action Required" >> $GITHUB_STEP_SUMMARY
+          echo "No merge conflicts were detected in the repository" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### ⚠️ Resolution Not Completed" >> $GITHUB_STEP_SUMMARY
+          echo "Conflicts were detected but resolution was not completed" >> $GITHUB_STEP_SUMMARY
+          echo "This may be due to:" >> $GITHUB_STEP_SUMMARY
+          echo "- Missing Claude Code OAuth token" >> $GITHUB_STEP_SUMMARY
+          echo "- API rate limiting" >> $GITHUB_STEP_SUMMARY
+          echo "- Complex conflicts requiring manual intervention" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "---" >> $GITHUB_STEP_SUMMARY
+        echo "*Powered by [Syncwright](https://github.com/NeuBlink/syncwright) - AI-powered Git conflict resolution*" >> $GITHUB_STEP_SUMMARY

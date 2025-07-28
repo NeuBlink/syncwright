@@ -1,0 +1,211 @@
+name: Test Optimized Syncwright Action
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_scenario:
+        description: 'Test scenario to run'
+        required: true
+        default: 'large_repo'
+        type: choice
+        options:
+          - small_repo
+          - medium_repo
+          - large_repo
+          - stress_test
+
+env:
+  # Test configurations for different scenarios
+  SMALL_REPO_CONFLICTS: 10
+  MEDIUM_REPO_CONFLICTS: 100
+  LARGE_REPO_CONFLICTS: 500
+  STRESS_TEST_CONFLICTS: 1000
+
+jobs:
+  test-optimized-action:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup test environment
+        shell: bash
+        run: |
+          echo "🧪 Setting up test environment for scenario: ${{ github.event.inputs.test_scenario }}"
+          
+          # Configure git for testing
+          git config --global user.name "Test Bot"
+          git config --global user.email "test@example.com"
+          
+          # Create test branch
+          git checkout -b test-conflicts-${{ github.run_id }}
+
+      - name: Generate test conflicts
+        shell: bash
+        run: |
+          echo "⚡ Generating test conflicts for scenario: ${{ github.event.inputs.test_scenario }}"
+          
+          case "${{ github.event.inputs.test_scenario }}" in
+            "small_repo")
+              NUM_CONFLICTS=${{ env.SMALL_REPO_CONFLICTS }}
+              ;;
+            "medium_repo")
+              NUM_CONFLICTS=${{ env.MEDIUM_REPO_CONFLICTS }}
+              ;;
+            "large_repo")
+              NUM_CONFLICTS=${{ env.LARGE_REPO_CONFLICTS }}
+              ;;
+            "stress_test")
+              NUM_CONFLICTS=${{ env.STRESS_TEST_CONFLICTS }}
+              ;;
+            *)
+              NUM_CONFLICTS=50
+              ;;
+          esac
+          
+          echo "📊 Creating $NUM_CONFLICTS test conflicts..."
+          
+          # Create a script to generate conflicts
+          cat > generate_conflicts.sh << 'EOF'
+          #!/bin/bash
+          
+          NUM_CONFLICTS=$1
+          CONFLICTS_PER_FILE=5
+          NUM_FILES=$((NUM_CONFLICTS / CONFLICTS_PER_FILE))
+          
+          if [ $NUM_FILES -eq 0 ]; then
+            NUM_FILES=1
+          fi
+          
+          echo "Creating $NUM_FILES test files with conflicts..."
+          
+          for i in $(seq 1 $NUM_FILES); do
+            FILE="test_file_${i}.txt"
+            echo "Creating conflicts in $FILE"
+            
+            # Create base content
+            echo "Base content for file $i" > "$FILE"
+            echo "Some shared content" >> "$FILE"
+            echo "More base content" >> "$FILE"
+            
+            # Commit base version
+            git add "$FILE"
+            git commit -m "Add base $FILE"
+            
+            # Create feature branch and modify
+            git checkout -b "feature-$i"
+            sed -i "s/Some shared content/Feature branch content for file $i/" "$FILE"
+            echo "Feature-specific content $i" >> "$FILE"
+            git add "$FILE"
+            git commit -m "Modify $FILE in feature branch"
+            
+            # Switch back and modify differently
+            git checkout test-conflicts-${{ github.run_id }}
+            sed -i "s/Some shared content/Main branch content for file $i/" "$FILE"
+            echo "Main-specific content $i" >> "$FILE"
+            git add "$FILE"
+            git commit -m "Modify $FILE in main branch"
+            
+            # Try to merge to create conflict
+            if ! git merge "feature-$i" --no-edit; then
+              echo "✅ Conflict created in $FILE"
+            fi
+          done
+          
+          echo "📈 Generated conflicts in $NUM_FILES files"
+          EOF
+          
+          chmod +x generate_conflicts.sh
+          ./generate_conflicts.sh $NUM_CONFLICTS
+          
+          # Verify conflicts were created
+          ACTUAL_CONFLICTS=$(git status --porcelain | grep "^UU" | wc -l)
+          echo "🔍 Actual conflicts created: $ACTUAL_CONFLICTS"
+          
+          if [ $ACTUAL_CONFLICTS -eq 0 ]; then
+            echo "⚠️ No conflicts were created, simulating merge failure"
+            echo "conflict_marker_start" > conflict_test.txt
+            echo "<<<<<<< HEAD" >> conflict_test.txt
+            echo "main branch content" >> conflict_test.txt
+            echo "=======" >> conflict_test.txt
+            echo "feature branch content" >> conflict_test.txt
+            echo ">>>>>>> feature" >> conflict_test.txt
+            echo "conflict_marker_end" >> conflict_test.txt
+            git add conflict_test.txt
+          fi
+
+      - name: Test Syncwright optimized action
+        uses: ./
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          merge_failed: true
+          batch_size: 0  # Auto-calculate based on repo size
+          concurrency: 3
+          timeout_minutes: 30
+          enable_streaming: true
+          max_retries: 3
+          confidence_threshold: 0.7
+          run_validation: true
+
+      - name: Validate test results
+        shell: bash
+        run: |
+          echo "🔍 Validating test results..."
+          
+          # Check if conflicts were resolved
+          REMAINING_CONFLICTS=$(git status --porcelain | grep "^UU" | wc -l || echo "0")
+          echo "📊 Remaining conflicts: $REMAINING_CONFLICTS"
+          
+          # Check for conflict markers in files
+          CONFLICT_MARKERS=$(grep -r "<<<<<<< HEAD" . --exclude-dir=.git || echo "No conflict markers found")
+          echo "🔍 Conflict markers check: $CONFLICT_MARKERS"
+          
+          # Display git status
+          echo "📋 Final git status:"
+          git status
+          
+          # Display recent commits
+          echo "📜 Recent commits:"
+          git log --oneline -5
+          
+          echo "✅ Test validation completed"
+
+      - name: Performance analysis
+        if: always()
+        shell: bash
+        run: |
+          echo "📊 Performance Analysis for ${{ github.event.inputs.test_scenario }}"
+          echo "================================"
+          
+          # Repository size analysis
+          REPO_SIZE=$(du -sh . 2>/dev/null | cut -f1 || echo "unknown")
+          echo "💽 Repository size: $REPO_SIZE"
+          
+          # Memory usage
+          if command -v free >/dev/null 2>&1; then
+            echo "💾 System memory usage:"
+            free -h
+          fi
+          
+          # Disk usage
+          echo "💿 Disk usage:"
+          df -h .
+          
+          echo "📈 Test scenario '${{ github.event.inputs.test_scenario }}' analysis completed"
+
+      - name: Cleanup test environment
+        if: always()
+        shell: bash
+        run: |
+          echo "🧹 Cleaning up test environment..."
+          
+          # Reset git state
+          git reset --hard HEAD~10 2>/dev/null || true
+          git clean -fd
+          
+          # Remove test branches
+          git branch -D $(git branch | grep -E "(feature-|test-)" | tr -d ' ') 2>/dev/null || true
+          
+          echo "✅ Cleanup completed"
