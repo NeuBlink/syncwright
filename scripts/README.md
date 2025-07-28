@@ -113,7 +113,7 @@ Enable verbose logging by examining the script output - all operations include d
 
 If the script fails entirely, you can manually install using:
 ```bash
-go install neublink/syncwright/cmd/syncwright@latest
+go install github.com/NeuBlink/syncwright/cmd/syncwright@latest
 ```
 
 This requires the Go toolchain to be installed on your system.

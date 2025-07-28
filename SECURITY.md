@@ -192,15 +192,42 @@ jobs:
           fetch-depth: 1  # Minimal history
       
       - name: Syncwright resolution
-        uses: neublink/syncwright@v1
+        uses: NeuBlink/syncwright@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          timeout_seconds: 300     # Reasonable timeout for security
+          max_retries: 3          # Limited retries to prevent abuse
+          debug_mode: false       # Disable debug in production (never log tokens)
           # Never use: ${{ github.token }} for AI operations
-        env:
-          SYNCWRIGHT_DEBUG: false  # Disable debug in production
 ```
 
-### 5. Network Security
+### 5. Debug Mode Security
+
+**Production Environments:**
+```yaml
+# NEVER enable debug mode in production
+debug_mode: false  # Default and recommended for production
+
+# Secure timeout settings
+timeout_seconds: 300   # Prevent resource exhaustion
+max_retries: 3        # Limit retry attempts
+```
+
+**Development/Testing Only:**
+```yaml
+# Only enable for debugging in secure environments
+debug_mode: true      # Detailed logging for troubleshooting
+timeout_seconds: 600  # Extended timeout for debugging
+max_retries: 5       # More retries for testing reliability
+```
+
+**Debug Mode Risks:**
+- May expose API request details in logs
+- Could reveal repository structure information
+- Increases log verbosity and storage requirements
+- Should never be used with sensitive repositories
+
+### 6. Network Security
 
 **Allowed Domains:**
 - `api.anthropic.com` (Claude Code API)
@@ -258,8 +285,14 @@ sudo -u syncwright syncwright detect
 # 3. Network isolation
 docker run --network none -v /repo:/repo syncwright detect --offline
 
-# 4. Resource limits
-docker run --memory=512m --cpus=1 syncwright
+# 4. Resource limits with timeout controls
+docker run --memory=512m --cpus=1 \
+  -e SYNCWRIGHT_TIMEOUT=300 \
+  -e SYNCWRIGHT_MAX_RETRIES=3 \
+  syncwright
+
+# 5. Disable debug mode in production
+docker run -e SYNCWRIGHT_DEBUG=false syncwright
 ```
 
 ### CI/CD Security
@@ -275,12 +308,15 @@ docker run --memory=512m --cpus=1 syncwright
     git diff --name-only | grep -E '\.(key|pem|p12)$' && exit 1
 
 - name: Syncwright with security controls
-  uses: neublink/syncwright@v1
+  uses: NeuBlink/syncwright@v1
   with:
     claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-    max_tokens: 8000  # Limit token usage
+    timeout_seconds: 300      # Prevent resource exhaustion
+    max_retries: 2           # Limited retries for security
+    debug_mode: false        # Never enable debug in production
+    max_tokens: 8000         # Limit token usage
     confidence_threshold: 0.8  # High confidence only
-    dry_run: true  # Preview mode for sensitive repos
+    dry_run: true            # Preview mode for sensitive repos
   
 - name: Post-resolution security check
   run: |
@@ -334,11 +370,11 @@ grep "API_CALL" /var/log/syncwright-audit.log | jq '.timestamp, .operation, .con
 
 Subscribe to security notifications:
 
-- **GitHub Security Advisories**: [github.com/neublink/syncwright/security](https://github.com/neublink/syncwright/security)
+- **GitHub Security Advisories**: [github.com/NeuBlink/syncwright/security](https://github.com/NeuBlink/syncwright/security)
 - **Email notifications**: security-announce@neublink.com
 - **RSS feed**: Available through GitHub releases
 
-For the latest security information and updates, always refer to the [official documentation](https://github.com/neublink/syncwright).
+For the latest security information and updates, always refer to the [official documentation](https://github.com/NeuBlink/syncwright).
 
 ---
 

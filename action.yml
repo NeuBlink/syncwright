@@ -153,7 +153,7 @@ runs:
               echo "Installation script failed or timed out, creating functional stub..."
 
               # Priority 4: Create functional stub for testing (fastest fallback)
-              cat > "$TARGET_BINARY" <<'STUB_EOF'
+              cat > "$TARGET_BINARY" <<STUB_EOF
               #!/bin/bash
               case "$1" in
                 --version) echo "syncwright version 0.0.0-ci-stub" ;;
@@ -302,7 +302,7 @@ runs:
           git add .
 
           # Create commit message
-          COMMIT_MSG=$(cat <<'EOF'
+          COMMIT_MSG=$(cat <<EOF
           Resolve merge conflicts using Syncwright AI
 
           Automatically resolved conflicts in ${{ steps.run-syncwright.outputs.files_modified }} files using

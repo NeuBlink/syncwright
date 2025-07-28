@@ -28,6 +28,7 @@ The Syncwright CI/CD pipeline consists of several GitHub Actions workflows that 
 - **Integration Test**: End-to-end testing of the GitHub Action
 - **Security Scan**: Security vulnerability scanning with Gosec
 - **Performance Test**: Benchmark testing and performance validation
+- **Timeout Testing**: Validation of timeout and retry mechanisms
 
 **Features**:
 - Matrix builds across multiple OS and Go versions
@@ -47,7 +48,7 @@ The Syncwright CI/CD pipeline consists of several GitHub Actions workflows that 
 - **Build**: Cross-platform binary builds with GoReleaser
 - **Release**: GitHub release creation with automated changelogs
 - **Publish Action**: GitHub Marketplace publishing
-- **Test Action Consumption**: Multi-platform action testing
+- **Test Action Consumption**: Multi-platform action testing with timeout validation
 - **Notify Completion**: Release status summary and notifications
 
 **Features**:
@@ -109,6 +110,14 @@ Comprehensive linting configuration:
 - **Formatting**: Gofmt and goimports validation
 - **Performance**: Inefficient code detection
 
+### Configuration Files (`configs/`)
+
+Project configuration management:
+
+- **`configs/logging.yml`**: Structured logging configuration and output formatting
+- **`configs/timeout.yml`**: Timeout and retry mechanism settings for reliable operations
+- **Default Settings**: Sensible defaults with environment variable overrides
+
 ## Version Management
 
 ### Semantic Versioning
@@ -152,6 +161,7 @@ make version-next      # Next possible versions
 make ci-local          # Full local CI run
 make check             # Quality checks
 make test-coverage     # Test with coverage
+make test-timeout      # Timeout and retry testing
 
 # Workflow validation
 make validate-workflows
@@ -261,6 +271,12 @@ Monitor workflow execution:
    - Validate action.yml metadata
    - Ensure stable release (not prerelease)
    - Check marketplace guidelines compliance
+
+4. **Timeout and Retry Issues**:
+   - Verify network connectivity and API availability
+   - Check timeout configuration in action inputs
+   - Validate retry logic with exponential backoff
+   - Monitor resource usage during extended operations
 
 ### Debug Resources
 

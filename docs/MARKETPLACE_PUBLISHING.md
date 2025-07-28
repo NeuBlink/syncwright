@@ -157,7 +157,7 @@ Syncwright follows [semantic versioning](https://semver.org/):
 
 For user convenience, major version tags (v1, v2, etc.) are automatically updated:
 
-- Users can reference `syncwright-team/syncwright@v1` for latest v1.x.x
+- Users can reference `NeuBlink/syncwright@v1` for latest v1.x.x
 - Provides stability while allowing automatic updates
 - Only updated for stable releases (not prereleases)
 
@@ -328,6 +328,9 @@ Test action components locally:
 # Test action steps manually
 export INPUT_RUN_VALIDATION=true
 export INPUT_MAX_TOKENS=-1
+export INPUT_TIMEOUT_SECONDS=300
+export INPUT_MAX_RETRIES=3
+export INPUT_DEBUG_MODE=false
 
 # Run installation script
 ./scripts/install.sh
@@ -361,6 +364,9 @@ Before creating a release tag:
 - [ ] Scripts are executable and functional
 - [ ] Binary builds successfully
 - [ ] Examples in README work
+- [ ] Timeout and retry mechanisms tested
+- [ ] Debug mode functionality validated
+- [ ] New input parameters documented
 
 ### Release Preparation
 

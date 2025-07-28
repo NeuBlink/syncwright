@@ -37,6 +37,12 @@ Syncwright prioritizes safety and reliability in automated conflict resolution. 
 - Repository access permissions
 - Input validation and sanitization
 
+### 5. Reliability Testing
+- Timeout mechanism validation under various load conditions
+- Retry logic testing with simulated network failures
+- Resource exhaustion scenarios and graceful degradation
+- Long-running operation handling and cancellation
+
 ## PR Testing Scenarios
 
 For comprehensive production readiness, test these realistic scenarios:
@@ -71,7 +77,7 @@ The reusable workflow (`syncwright-reusable.yml`) provides:
 ### Consumer Workflow Setup
 Minimal consumer configuration:
 ```yaml
-uses: neublink/syncwright@v1
+uses: NeuBlink/syncwright@v1
 with:
   claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 ```
@@ -93,13 +99,42 @@ with:
 ## Troubleshooting
 
 ### Common Issues
-- **Timeout errors**: Increase timeout_seconds parameter
-- **API rate limits**: Implement retry delays and backoff
-- **Large conflicts**: Use max_tokens parameter tuning
+- **Timeout errors**: Increase timeout_seconds parameter (default: 300s)
+- **API rate limits**: Implement retry delays and backoff (max_retries parameter)
+- **Large conflicts**: Use max_tokens parameter tuning (unlimited by default)
 - **Permission errors**: Verify repository access and token scopes
+- **Network instability**: Enable debug_mode for detailed connection logging
+- **Resource constraints**: Monitor memory usage during large repository processing
 
 ### Debug Mode
 Enable detailed logging with `debug_mode: true` for comprehensive operation visibility.
+
+## Timeout and Retry Testing
+
+### Test Scenarios for Reliability
+- **Short timeout test**: Set timeout_seconds to 30 and verify graceful handling
+- **Network interruption**: Simulate network drops during AI resolution
+- **API unavailability**: Test behavior when Claude Code API is unreachable
+- **Large repository timeout**: Test with repositories >1GB with various timeout settings
+- **Retry exhaustion**: Verify behavior when max_retries is exceeded
+
+### Test Configuration Examples
+```yaml
+# Stress test configuration
+timeout_seconds: 60
+max_retries: 10
+debug_mode: true
+
+# Production-like configuration  
+timeout_seconds: 600
+max_retries: 3
+debug_mode: false
+
+# Conservative configuration
+timeout_seconds: 1200
+max_retries: 5
+debug_mode: false
+```
 
 ## Metrics and Monitoring
 
@@ -108,6 +143,8 @@ Track these key metrics for production deployment:
 - Average resolution time  
 - Manual intervention frequency
 - Developer satisfaction scores
+- Timeout occurrence frequency
+- Retry success rate after initial failures
 
 ## Contributing to Tests
 

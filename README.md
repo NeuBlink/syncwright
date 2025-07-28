@@ -46,10 +46,10 @@ Install and use Syncwright directly:
 
 ```bash
 # Install via script (recommended)
-curl -fsSL https://raw.githubusercontent.com/neublink/syncwright/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/NeuBlink/syncwright/main/scripts/install.sh | bash
 
 # Or install via Go
-go install github.com/neublink/syncwright/cmd/syncwright@latest
+go install github.com/NeuBlink/syncwright/cmd/syncwright@latest
 
 # Detect conflicts
 syncwright detect --verbose
@@ -82,21 +82,23 @@ Use Syncwright as a reusable GitHub Action:
     pr_number: ${{ github.event.number }}
     base_branch: ${{ github.base_ref }}
     head_branch: ${{ github.head_ref }}
+    timeout_seconds: 300  # Maximum execution time
+    max_retries: 3        # Retry attempts for failed operations
 ```
 
 ### Binary Installation
 
 **Automated Script (Linux/macOS/Windows)**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/neublink/syncwright/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/NeuBlink/syncwright/main/scripts/install.sh | bash
 ```
 
 **Manual Download**
-Download pre-compiled binaries from [GitHub Releases](https://github.com/neublink/syncwright/releases)
+Download pre-compiled binaries from [GitHub Releases](https://github.com/NeuBlink/syncwright/releases)
 
 **Go Install**
 ```bash
-go install github.com/neublink/syncwright/cmd/syncwright@latest
+go install github.com/NeuBlink/syncwright/cmd/syncwright@latest
 ```
 
 ## Configuration
@@ -123,6 +125,9 @@ go install github.com/neublink/syncwright/cmd/syncwright@latest
 | `pr_number` | Pull request number | No | - |
 | `base_branch` | Base branch name | No | - |
 | `head_branch` | Head branch name | No | - |
+| `timeout_seconds` | Maximum execution time in seconds | No | 300 |
+| `max_retries` | Maximum number of retry attempts | No | 3 |
+| `debug_mode` | Enable detailed debug logging | No | false |
 
 ### CLI Configuration
 
@@ -130,14 +135,17 @@ go install github.com/neublink/syncwright/cmd/syncwright@latest
 # Set confidence threshold (0.0-1.0)
 syncwright ai-apply --confidence-threshold 0.8
 
-# Enable verbose output
-syncwright detect --verbose
+# Enable verbose output with timeout control
+syncwright detect --verbose --timeout 600
 
-# Specify output format
-syncwright validate --format json --out results.json
+# Specify output format with retry logic
+syncwright validate --format json --out results.json --max-retries 5
 
-# Dry run mode
-syncwright ai-apply --dry-run
+# Dry run mode with extended timeout
+syncwright ai-apply --dry-run --timeout 900
+
+# Debug mode for troubleshooting
+syncwright resolve --ai --verbose --debug
 ```
 
 ## Workflow Examples
@@ -189,7 +197,10 @@ jobs:
           base_branch: ${{ github.base_ref }}
           head_branch: ${{ github.head_ref }}
           run_validation: true
-          # max_tokens: -1  # unlimited by default
+          timeout_seconds: 600  # Extended timeout for large repositories
+          max_retries: 3        # Retry failed operations
+          debug_mode: false     # Enable for troubleshooting
+          # max_tokens: -1      # unlimited by default
 ```
 
 ### CLI Workflow
@@ -279,6 +290,24 @@ syncwright ai-apply --confidence-threshold 0.5
 syncwright ai-apply --dry-run --verbose
 ```
 
+**Q: "Operation timed out" errors**
+```bash
+# Increase timeout for large repositories
+syncwright resolve --ai --timeout 900
+
+# Enable retries for reliability
+syncwright resolve --ai --max-retries 5
+```
+
+**Q: "Retry attempts exceeded" failures**
+```bash
+# Check network connectivity and API status
+curl -I https://api.anthropic.com
+
+# Increase timeout and retry settings
+syncwright resolve --ai --timeout 600 --max-retries 10
+```
+
 ### Debug Mode
 
 Enable detailed logging:
@@ -290,14 +319,17 @@ syncwright detect --verbose
 
 Or in GitHub Actions:
 ```yaml
-env:
-  SYNCWRIGHT_DEBUG: true
+- uses: neublink/syncwright@v1
+  with:
+    claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+    debug_mode: true
+    timeout_seconds: 600  # Extended timeout for debugging
 ```
 
 ### Getting Help
 
 - Check [USAGE.md](USAGE.md) for detailed examples
-- Review [GitHub Issues](https://github.com/neublink/syncwright/issues) for known problems
+- Review [GitHub Issues](https://github.com/NeuBlink/syncwright/issues) for known problems
 - Enable verbose mode (`--verbose`) for detailed output
 - Use dry-run mode (`--dry-run`) to preview changes
 
@@ -315,7 +347,7 @@ We welcome contributions! Please see our contributing guidelines:
 
 ```bash
 # Clone repository
-git clone https://github.com/neublink/syncwright.git
+git clone https://github.com/NeuBlink/syncwright.git
 cd syncwright
 
 # Install dependencies
@@ -352,8 +384,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## Support
 
 - **Documentation**: [USAGE.md](USAGE.md), [SECURITY.md](SECURITY.md)
-- **Issues**: [GitHub Issues](https://github.com/neublink/syncwright/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/neublink/syncwright/discussions)
+- **Issues**: [GitHub Issues](https://github.com/NeuBlink/syncwright/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/NeuBlink/syncwright/discussions)
 
 ---
 

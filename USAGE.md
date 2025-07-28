@@ -89,11 +89,11 @@ syncwright validate
 # Comprehensive validation
 syncwright validate --comprehensive
 
-# With timeout
-syncwright validate --timeout 600
+# With custom timeout and retries
+syncwright validate --timeout 600 --max-retries 5
 
-# Save validation results
-syncwright validate --out validation.json --verbose
+# Save validation results with debug output
+syncwright validate --out validation.json --verbose --debug
 ```
 
 ### Complete CLI Workflow
@@ -106,6 +106,8 @@ set -e
 
 # Configuration
 CONFIDENCE_THRESHOLD=0.7
+TIMEOUT_SECONDS=600
+MAX_RETRIES=5
 # MAX_TOKENS=-1  # unlimited by default
 OUTPUT_DIR="./syncwright-output"
 
@@ -139,6 +141,8 @@ if ! syncwright ai-apply \
     --in "$OUTPUT_DIR/payload.json" \
     --out "$OUTPUT_DIR/resolutions.json" \
     --confidence-threshold "$CONFIDENCE_THRESHOLD" \
+    --timeout "$TIMEOUT_SECONDS" \
+    --max-retries "$MAX_RETRIES" \
     # --max-tokens -1  # unlimited by default \
     --verbose; then
     echo "❌ AI resolution failed"
@@ -189,7 +193,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: neublink/syncwright@v1
+      - uses: NeuBlink/syncwright@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 ```
@@ -242,7 +246,7 @@ jobs:
       - name: Check for conflicts
         id: check
         if: steps.merge.outputs.merge-successful == 'false'
-        uses: neublink/syncwright@v1
+        uses: NeuBlink/syncwright@v1
         with:
           run_validation: false
           # Only detect, don't resolve yet
@@ -268,14 +272,17 @@ jobs:
       
       - name: Resolve with confidence ${{ matrix.confidence }}
         id: resolve
-        uses: neublink/syncwright@v1
+        uses: NeuBlink/syncwright@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           merge_failed: true
           pr_number: ${{ github.event.number }}
           base_branch: ${{ github.base_ref }}
           head_branch: ${{ github.head_ref }}
-          # max_tokens: -1  # unlimited by default
+          timeout_seconds: 900     # Extended timeout for complex conflicts
+          max_retries: 3          # Retry failed operations
+          debug_mode: true        # Enable for detailed logging
+          # max_tokens: -1        # unlimited by default
           confidence_threshold: ${{ matrix.confidence }}
       
       - name: Post resolution summary
@@ -310,7 +317,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run comprehensive validation
-        uses: neublink/syncwright@v1
+        uses: NeuBlink/syncwright@v1
         with:
           run_validation: true
           validation_mode: comprehensive
@@ -356,10 +363,13 @@ jobs:
           fetch-depth: 0
       
       - name: Resolve ${{ matrix.language }} conflicts
-        uses: neublink/syncwright@v1
+        uses: NeuBlink/syncwright@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # max_tokens: -1  # unlimited by default
+          timeout_seconds: 900      # Extended timeout for large codebases
+          max_retries: 5           # More retries for reliability
+          debug_mode: false        # Enable for troubleshooting
+          # max_tokens: -1         # unlimited by default
           file_filter: ${{ matrix.files }}
           language_specific: true
 ```
@@ -597,18 +607,36 @@ ls -la *.json
 jq '.' conflicts.json  # Validate JSON structure
 ```
 
-### Handle API Rate Limits
+### Handle API Rate Limits and Timeouts
 
 ```bash
-# Reduce token usage
 # Reduce token usage if needed (unlimited by default)
 syncwright ai-apply --max-tokens 5000
 
-# Add delays between requests
-syncwright ai-apply --rate-limit-delay 2
+# Extended timeout for large repositories
+syncwright ai-apply --timeout 1200
 
-# Process files in smaller batches
-syncwright ai-apply --batch-size 3
+# Increase retry attempts for unreliable networks
+syncwright ai-apply --max-retries 10
+
+# Combine timeout and retry settings
+syncwright ai-apply --timeout 900 --max-retries 5 --verbose
+```
+
+### Handle Timeout Issues
+
+```bash
+# For large repositories, increase timeout
+export SYNCWRIGHT_TIMEOUT=1800
+syncwright resolve --ai --verbose
+
+# Network timeout troubleshooting
+syncwright resolve --ai --timeout 600 --max-retries 3 --debug
+
+# Progressive timeout strategy
+syncwright ai-apply --timeout 300 || \
+syncwright ai-apply --timeout 600 || \
+syncwright ai-apply --timeout 1200
 ```
 
 ### Recovery from Failed Resolutions
@@ -643,4 +671,4 @@ act pull_request -s CLAUDE_CODE_OAUTH_TOKEN="your-token"
     ./syncwright --version
 ```
 
-This comprehensive usage guide covers the most common scenarios and advanced configurations for Syncwright. For additional help, see the main [README.md](README.md) or [open an issue](https://github.com/neublink/syncwright/issues).
+This comprehensive usage guide covers the most common scenarios and advanced configurations for Syncwright. For additional help, see the main [README.md](README.md) or [open an issue](https://github.com/NeuBlink/syncwright/issues).

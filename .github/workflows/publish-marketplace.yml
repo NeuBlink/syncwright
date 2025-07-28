@@ -20,6 +20,11 @@ on:
 env:
   GO_VERSION: '1.22'
 
+permissions:
+  contents: write    # Required for creating releases and updating tags
+  packages: write    # Required for publishing packages
+  actions: read      # Required for workflow access
+
 jobs:
   validate-action:
     name: Validate Action
@@ -276,12 +281,10 @@ jobs:
 
       - name: Create GitHub Release
         id: create-release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          release_name: Syncwright ${{ github.ref_name }}
+          name: Syncwright ${{ github.ref_name }}
           body_path: ${{ steps.release-notes.outputs.release-notes-file }}
           draft: false
           prerelease: ${{ needs.validate-action.outputs.is-prerelease }}
@@ -293,7 +296,7 @@ jobs:
           echo "Version: ${{ needs.validate-action.outputs.version }}"
           echo "Major Version: v${{ needs.validate-action.outputs.major-version }}"
           echo "Is Prerelease: ${{ needs.validate-action.outputs.is-prerelease }}"
-          echo "Release URL: ${{ steps.create-release.outputs.html_url }}"
+          echo "Release URL: ${{ steps.create-release.outputs.url }}"
           echo "=================================="
 
           # Add to step summary
@@ -306,7 +309,7 @@ jobs:
             echo "| **Version** | \`${{ needs.validate-action.outputs.version }}\` |"
             echo "| **Major Version** | \`v${{ needs.validate-action.outputs.major-version }}\` |"
             echo "| **Prerelease** | ${{ needs.validate-action.outputs.is-prerelease }} |"
-            echo "| **Release** | [${{ github.ref_name }}](${{ steps.create-release.outputs.html_url }}) |"
+            echo "| **Release** | [${{ github.ref_name }}](${{ steps.create-release.outputs.url }}) |"
             echo ""
             echo "### 📋 Next Steps"
             echo ""
