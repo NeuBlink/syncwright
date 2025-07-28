@@ -567,4 +567,3 @@ func joinLines(lines []string) string {
 	}
 	return result
 }
-
