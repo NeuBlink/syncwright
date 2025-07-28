@@ -198,6 +198,7 @@ on:
 jobs:
   resolve:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
@@ -231,6 +232,7 @@ env:
 jobs:
   detect-conflicts:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       has-conflicts: ${{ steps.check.outputs.has-conflicts }}
       conflict-count: ${{ steps.check.outputs.conflict-count }}
@@ -267,6 +269,7 @@ jobs:
     needs: detect-conflicts
     if: needs.detect-conflicts.outputs.has-conflicts == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
@@ -324,6 +327,7 @@ jobs:
     needs: resolve-conflicts
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     
     steps:
       - uses: actions/checkout@v4
@@ -356,6 +360,7 @@ on:
 jobs:
   resolve-by-language:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         include:

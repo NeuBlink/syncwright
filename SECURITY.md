@@ -8,10 +8,11 @@ Syncwright takes security seriously and implements multiple layers of protection
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.x.x   | ✅ Active support  |
+| 1.0.3+  | ✅ Active support  |
+| 1.0.0-1.0.2 | ⚠️ Security issues fixed in 1.0.3 |
 | 0.x.x   | ❌ No longer supported |
 
-Security updates are provided for the latest major version. Please upgrade to the latest version to receive security patches.
+Security updates are provided for the latest major version. Please upgrade to v1.0.3+ to receive security patches and bug fixes.
 
 ## Security Features
 
@@ -86,6 +87,50 @@ All AI resolutions include confidence scores:
 - **Medium confidence (0.6-0.8)**: Review recommended
 - **Low confidence (<0.6)**: Manual review required
 
+### 5. Claude Code OAuth Token Security
+
+**Token Management Best Practices:**
+
+#### Generation & Storage
+- **Generate tokens**: Only through [console.anthropic.com](https://console.anthropic.com)
+- **Store securely**: Use GitHub Secrets, never commit to code
+- **Name descriptively**: Use specific names like "Syncwright-ProjectName"
+- **Rotate regularly**: Generate new tokens every 90 days
+
+#### GitHub Actions Security
+```yaml
+# ✅ SECURE: Use GitHub Secrets
+- uses: neublink/syncwright@v1.0.3
+  with:
+    claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+# ❌ INSECURE: Never hardcode tokens
+- uses: neublink/syncwright@v1.0.3
+  with:
+    claude_code_oauth_token: "sk-ant-oat01-..." # NEVER DO THIS
+```
+
+#### Access Control
+- **Repository-level**: Store tokens at repository level for project isolation
+- **Team access**: Use organization secrets for shared projects only
+- **Environment secrets**: Use environment-specific tokens for staging/production
+- **Audit regularly**: Review token usage in Anthropic Console
+
+#### Token Lifecycle
+1. **Creation**: Generate with minimal required permissions
+2. **Distribution**: Share only through secure channels (GitHub Secrets)
+3. **Monitoring**: Track usage and set up alerts for unusual activity
+4. **Rotation**: Replace tokens before expiration
+5. **Revocation**: Immediately revoke compromised tokens
+
+#### Incident Response
+If a token is compromised:
+1. **Immediately revoke** the token in Anthropic Console
+2. **Generate new token** with different name
+3. **Update GitHub Secrets** with new token
+4. **Review logs** for unauthorized usage
+5. **Notify team** of security incident
+
 ## Data Handling Policy
 
 ### What Data is Processed
@@ -145,7 +190,31 @@ echo "TOKEN=sk-1234567890" >> .env  # ❌ NEVER
 ./script.sh sk-1234567890  # ❌ NEVER
 ```
 
-### 2. File Exclusion
+### 2. Workflow Security & Timeouts
+
+**Prevent Runaway Processes:**
+```yaml
+jobs:
+  syncwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15  # ✅ REQUIRED: Prevent infinite runs
+    permissions:         # ✅ REQUIRED: Minimal permissions
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: neublink/syncwright@v1.0.3
+        with:
+          timeout_seconds: 600   # ✅ Action-level timeout
+          max_retries: 3         # ✅ Limit retry attempts
+```
+
+**Security Recommendations:**
+- **Always set timeouts**: Use `timeout-minutes` on jobs and `timeout_seconds` on actions
+- **Limit permissions**: Only grant necessary permissions (contents: write, pull-requests: write)
+- **Monitor usage**: Set up alerts for workflow duration and frequency
+- **Resource limits**: Use smaller runners for conflict resolution when possible
+
+### 3. File Exclusion
 
 Create a `.syncwright-ignore` file for additional exclusions:
 

@@ -30,6 +30,7 @@ on:
 jobs:
   resolve:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
@@ -37,10 +38,57 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: neublink/syncwright@v1.0.3.0.1
+      - uses: neublink/syncwright@v1.0.3
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 ```
+
+## 🔑 Token Setup (Required for AI Features)
+
+### Step 1: Generate Claude Code OAuth Token
+
+1. **Visit Claude Code Console**: Go to [console.anthropic.com](https://console.anthropic.com)
+2. **Login/Create Account**: Sign in with your Anthropic account
+3. **Navigate to API Keys**: Go to Settings → API Keys
+4. **Create New Key**: Click "Create Key" 
+5. **Name Your Key**: Use a descriptive name like "Syncwright GitHub Action"
+6. **Copy Token**: Save the token securely (starts with `sk-ant-oat01-...`)
+
+### Step 2: Add Token to GitHub Repository
+
+1. **Go to Repository Settings**: Navigate to your repo → Settings
+2. **Access Secrets**: Click "Secrets and variables" → "Actions"  
+3. **Add New Secret**: Click "New repository secret"
+4. **Configure Secret**:
+   - **Name**: `CLAUDE_CODE_OAUTH_TOKEN`
+   - **Value**: Your Claude Code OAuth token from Step 1
+5. **Save**: Click "Add secret"
+
+### Step 3: Verify Token Setup
+
+```yaml
+# Test your token setup with this minimal workflow
+name: Test Syncwright Token
+on: workflow_dispatch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: neublink/syncwright@v1.0.3
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          run_validation: true
+```
+
+### ⚠️ Security Notes
+
+- **Never commit tokens**: Keep tokens in GitHub Secrets only
+- **Rotate regularly**: Generate new tokens every 90 days
+- **Scope appropriately**: Use dedicated tokens for different projects
+- **Monitor usage**: Check API usage in Claude Code Console
 
 ### As CLI Tool
 
@@ -165,6 +213,7 @@ on:
 jobs:
   resolve-conflicts:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
