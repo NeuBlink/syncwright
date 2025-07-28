@@ -31,8 +31,22 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Check Claude Code OAuth Token
+        id: check-token
+        run: |
+          if [ -z "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}" ]; then
+            echo "⚠️ CLAUDE_CODE_OAUTH_TOKEN secret not found"
+            echo "Please add the Claude Code OAuth token to repository secrets"
+            echo "Visit https://github.com/apps/claude to install the Claude Code GitHub App"
+            echo "has_token=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Claude Code OAuth token found"
+            echo "has_token=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run Claude Code Review
         id: claude-review
+        if: steps.check-token.outputs.has_token == 'true'
         uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -65,8 +79,10 @@ jobs:
           # Optional: Different prompts for different authors
           # direct_prompt: |
           #   ${{ github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR' && 
-          #   'Welcome! Please review this PR from a first-time contributor. Be encouraging and provide detailed explanations for any suggestions.' ||
-          #   'Please provide a thorough code review focusing on our coding standards and best practices.' }}
+          #   'Welcome! Please review this PR from a first-time contributor. Be encouraging 
+          #   and provide detailed explanations for any suggestions.' ||
+          #   'Please provide a thorough code review focusing on our coding standards and 
+          #   best practices.' }}
           
           # Optional: Add specific tools for running tests or linting
           # allowed_tools: "Bash(npm run test),Bash(npm run lint),Bash(npm run typecheck)"
@@ -75,4 +91,23 @@ jobs:
           # if: |
           #   !contains(github.event.pull_request.title, '[skip-review]') &&
           #   !contains(github.event.pull_request.title, '[WIP]')
+
+      - name: Comment on missing token
+        if: steps.check-token.outputs.has_token == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ⚠️ Claude Code Setup Required
+            
+            The Claude Code review workflow is configured but missing required setup:
+            
+            1. **Install the Claude Code GitHub App**: Visit https://github.com/apps/claude
+            2. **Add OAuth Token**: Add \`CLAUDE_CODE_OAUTH_TOKEN\` to repository secrets
+            
+            Once configured, Claude Code will automatically review pull requests and respond to @claude mentions.`
+            })
 
