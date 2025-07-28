@@ -13,6 +13,8 @@ Syncwright is a production-ready CLI tool and GitHub Action that automatically d
 - **GitHub Actions Integration** - Seamless CI/CD workflow integration with composite action
 - **Security Conscious** - Automatically filters sensitive files and credentials from AI processing
 - **Comprehensive Validation** - Built-in syntax checking and project validation tools
+- **Timeout & Retry Support** - Configurable timeout limits and retry mechanisms for reliability
+- **Debug Mode** - Detailed logging for troubleshooting and development
 
 ## Quick Start
 
@@ -35,7 +37,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: neublink/syncwright@v1
+      - uses: neublink/syncwright@v1.0.1.0.1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 ```
@@ -75,15 +77,16 @@ syncwright validate --comprehensive
 Use Syncwright as a reusable GitHub Action:
 
 ```yaml
-- uses: neublink/syncwright@v1
+- uses: neublink/syncwright@v1.0.1
   with:
     claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     merge_failed: true  # Set to true when merge conflicts detected
     pr_number: ${{ github.event.number }}
     base_branch: ${{ github.base_ref }}
     head_branch: ${{ github.head_ref }}
-    timeout_seconds: 300  # Maximum execution time
-    max_retries: 3        # Retry attempts for failed operations
+    timeout_seconds: 300  # Maximum execution time (default: 300)
+    max_retries: 3        # Retry attempts for failed operations (default: 3)
+    debug_mode: false     # Enable detailed debug logging (default: false)
 ```
 
 ### Binary Installation
@@ -120,7 +123,7 @@ go install github.com/NeuBlink/syncwright/cmd/syncwright@latest
 |-------|-------------|----------|---------|
 | `claude_code_oauth_token` | Claude Code OAuth token | No | - |
 | `run_validation` | Run validation checks | No | true |
-| `max_tokens` | Maximum tokens for AI processing (-1 for unlimited) | No | unlimited |
+| `max_tokens` | Maximum tokens for AI processing (-1 for unlimited) | No | -1 |
 | `merge_failed` | Whether automatic merge failed | No | false |
 | `pr_number` | Pull request number | No | - |
 | `base_branch` | Base branch name | No | - |
@@ -319,7 +322,7 @@ syncwright detect --verbose
 
 Or in GitHub Actions:
 ```yaml
-- uses: neublink/syncwright@v1
+- uses: neublink/syncwright@v1.0.1
   with:
     claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     debug_mode: true

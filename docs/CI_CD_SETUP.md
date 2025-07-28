@@ -1,16 +1,14 @@
 # CI/CD Pipeline Documentation
 
-This document describes the comprehensive CI/CD pipeline setup for Syncwright, including release automation, continuous integration, and GitHub Marketplace publishing.
+Comprehensive CI/CD setup for Syncwright with automated testing, releases, and marketplace publishing.
 
-## Overview
+## Pipeline Overview
 
-The Syncwright CI/CD pipeline consists of several GitHub Actions workflows that handle:
-
-- **Continuous Integration**: Automated testing, linting, and validation
-- **Release Management**: Automated version bumping and GitHub releases
-- **Package Distribution**: Multi-platform binary builds via GoReleaser
-- **Marketplace Publishing**: GitHub Actions marketplace integration
-- **Quality Assurance**: Security scanning and comprehensive testing
+- **CI**: Testing, linting, and validation on push/PR
+- **Release**: Automated versioning and GitHub releases  
+- **Distribution**: Multi-platform binaries via GoReleaser
+- **Marketplace**: GitHub Actions marketplace publishing
+- **Quality**: Security scanning and comprehensive testing
 
 ## Workflows
 

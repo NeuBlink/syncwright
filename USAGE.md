@@ -29,6 +29,12 @@ syncwright detect --verbose
 
 # Text format output
 syncwright detect --format text
+
+# With timeout control (in seconds)
+syncwright detect --timeout 600 --verbose
+
+# Enable debug mode for troubleshooting
+syncwright detect --debug --verbose
 ```
 
 #### Generate AI Payload
@@ -59,6 +65,12 @@ syncwright ai-apply --in payload.json --dry-run --verbose
 
 # Save results
 syncwright ai-apply --in payload.json --out resolutions.json
+
+# With timeout and retry controls
+syncwright ai-apply --in payload.json --timeout 300 --max-retries 3 --verbose
+
+# Enable debug mode for detailed logging
+syncwright ai-apply --in payload.json --debug --verbose
 ```
 
 #### Format Files
@@ -193,7 +205,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: NeuBlink/syncwright@v1
+      - uses: neublink/syncwright@v1.0.1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 ```
@@ -246,7 +258,7 @@ jobs:
       - name: Check for conflicts
         id: check
         if: steps.merge.outputs.merge-successful == 'false'
-        uses: NeuBlink/syncwright@v1
+        uses: neublink/syncwright@v1.0.1
         with:
           run_validation: false
           # Only detect, don't resolve yet
@@ -272,7 +284,7 @@ jobs:
       
       - name: Resolve with confidence ${{ matrix.confidence }}
         id: resolve
-        uses: NeuBlink/syncwright@v1
+        uses: neublink/syncwright@v1.0.1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           merge_failed: true
@@ -317,7 +329,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run comprehensive validation
-        uses: NeuBlink/syncwright@v1
+        uses: neublink/syncwright@v1.0.1
         with:
           run_validation: true
           validation_mode: comprehensive
@@ -363,7 +375,7 @@ jobs:
           fetch-depth: 0
       
       - name: Resolve ${{ matrix.language }} conflicts
-        uses: NeuBlink/syncwright@v1
+        uses: neublink/syncwright@v1.0.1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           timeout_seconds: 900      # Extended timeout for large codebases

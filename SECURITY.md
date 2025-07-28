@@ -192,7 +192,7 @@ jobs:
           fetch-depth: 1  # Minimal history
       
       - name: Syncwright resolution
-        uses: NeuBlink/syncwright@v1
+        uses: neublink/syncwright@v1.0.1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           timeout_seconds: 300     # Reasonable timeout for security
@@ -308,7 +308,7 @@ docker run -e SYNCWRIGHT_DEBUG=false syncwright
     git diff --name-only | grep -E '\.(key|pem|p12)$' && exit 1
 
 - name: Syncwright with security controls
-  uses: NeuBlink/syncwright@v1
+  uses: neublink/syncwright@v1.0.1
   with:
     claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     timeout_seconds: 300      # Prevent resource exhaustion
