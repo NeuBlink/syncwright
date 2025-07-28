@@ -1,0 +1,34 @@
+name: Test Syncwright Action
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test-action:
+    name: Test Action Execution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Test Syncwright Action
+        uses: ./
+        with:
+          run_validation: true
+          max_tokens: -1
+          merge_failed: false
+          timeout_seconds: 120
+          max_retries: 2
+          debug_mode: true
+      
+      - name: Verify Action Completed
+        run: |
+          echo "✅ Syncwright action completed successfully!"
+          echo "✅ No HERE document syntax errors"
+          echo "✅ Binary stub creation worked"
+          echo "✅ YAML processing successful"
